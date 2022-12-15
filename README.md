@@ -4,18 +4,18 @@
 ### Official pytorch implementation of the paper: "SinDDM: A Single Image Denoising Diffusion Model"
 
 
-## Random samples from a *single* image
-With SinDDM, you can train a generative model from a single natural image, and then generate random samples from the given image, for example:
+## Random samples from a single example
+With SinDDM, one can train a generative model from a single natural image, and then generate random samples from the given image, for example:
 
 ![](imgs/teaser.PNG)
 
 
 ## SinDDM's applications
-SinDDM can be also used for a line of image manipulation tasks, for example:
+SinDDM can also be used for a line of image manipulation tasks, especially image manipluations guided by text, for example:
  ![](imgs/manipulation.PNG)
 
 
-See section 3 in our [paper](https://arxiv.org/pdf/2211.16582.pdf) for more details.
+See section 4 in our [paper](https://arxiv.org/pdf/2211.16582.pdf) for more details about our results and experiments.
 
 
 ### Citation
@@ -30,7 +30,14 @@ If you use this code for your research, please cite our paper:
 }
 ```
 
-## Code
+## Table of Contents
+* [Random samples from a single example](#Random-samples-from-a-single-example)
+* [SinDDM's applications](#SinDDM's-applications)
+* [Citation](#citation)
+* [Code and Usafe Examples](#Code-and-Usage-Examples)
+* [Data and Pretrained Models](#Data-and-Pretrained-Models)
+
+## Code and Usage Examples 
 **Note: This is an early code release which provides full functionality, but is not yet fully organized or optimized. We will be extensively updating this repository in the coming weeks.** 
 ### Install dependencies (coming soon)
 
@@ -55,13 +62,14 @@ To generate random samples, please first train a SinDDM model on the desired ima
 ```
 python main.py --scope <training_image> --mode sample --dataset_folder ./datasets/<training_image>/ --image_name <training_image.png> --results_folder ./results/ --load_milestone 12
 ```
-
-###  Random samples of arbitrary sizes 
+To sample images in arbitrary sizes, one can add ```--scale_mul <y> <x>``` argument to generate an image that is <y> times as high and <x> times as wide as the original image.
+ 
+<!-- ###  Random samples of arbitrary sizes 
 To generate random samples of arbitrary sizes, use the '--scale_mul h w' argument.
 For example, to generate an image with the width dimension 2 times larger run
 ```
 python main.py --scope <training_image> --mode sample --dataset_folder ./datasets/<training_image>/ --image_name <training_image.png> --results_folder ./results/ --load_milestone 12 --scale_mul 1 2
-```
+``` -->
 
 ###  Text guided content generation
 
@@ -70,7 +78,7 @@ To guide the generation to create new content using a given text prompt <text_pr
 ```
 python main.py --scope <training_image> --mode clip_content --clip_text <text_prompt> --strength <s> --fill_factor <f> --dataset_folder ./datasets/<training_image>/ --image_name <training_image.png> --results_folder ./results/ --load_milestone 12
 ```
-Where *strength* and *fill_factor* are controllable parameters explained in the paper.
+Where **_strength_** and **_fill_factor_** are controllable parameters explained in the paper.
 
 ###  Text guided style generation
 
@@ -122,6 +130,10 @@ To transfer the style of the training image to a content image, place the conten
 python main.py --scope <training_image> --mode style_transfer --input_image <content_image> --dataset_folder ./datasets/<training_image>/ --image_name <training_image.png> --results_folder ./results/ --load_milestone 12
 ```
 
-## Pretrained models
+## Data and Pretrained Models
 We provide several pre-trained models for you to use under /results/ folder. More models will be available soon.
+ 
+*We provide all the training images we used in our paper. All the images we provide are in the dimensions we used for training and are in .png format. (coming soon).* 
+ 
 
+ 

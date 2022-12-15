@@ -1,5 +1,5 @@
-[![Single Image Generative Model](https://img.shields.io/badge/python-3.8.12+-yellow)](https://matankleiner.github.io/sinddm/)
-[![Python 3.8](https://img.shields.io/badge/python-3.8+-blue)](https://www.python.org/downloads/release/python-38/)
+[![Single Image Generative Model](https://img.shields.io/badge/single-image-generative-model+-yellow)](https://matankleiner.github.io/sinddm/)
+[![Python 3.8](https://img.shields.io/badge/python-3.812+-blue)](https://www.python.org/downloads/release/python-38/)
 [![torch](https://img.shields.io/badge/torch-1.13.0+-green)](https://pytorch.org/)
 
 # SinDDM

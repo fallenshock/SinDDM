@@ -1,3 +1,7 @@
+[![Single Image Generative Model](https://img.shields.io/badge/python-3.8.12+-yellow)](https://matankleiner.github.io/sinddm/)
+[![Python 3.8](https://img.shields.io/badge/python-3.8+-blue)](https://www.python.org/downloads/release/python-38/)
+[![torch](https://img.shields.io/badge/torch-1.13.0+-green)](https://pytorch.org/)
+
 # SinDDM
 
 [Project](https://matankleiner.github.io/sinddm/) | [Arxiv](https://arxiv.org/pdf/2211.16582.pdf) | [Supplementary materials](https://matankleiner.github.io/sinddm/resources/sinddm_supp.pdf)
@@ -34,7 +38,7 @@ If you use this code for your research, please cite our paper:
 * [Random samples from a single example](#Random-samples-from-a-single-example)
 * [SinDDM's applications](#SinDDMs-applications)
 * [Citation](#citation)
-* [Code and Usafe Examples](#Code-and-Usage-Examples)
+* [Code and Usage Examples](#Code-and-Usage-Examples)
 * [Data and Pretrained Models](#Data-and-Pretrained-Models)
 
 ## Code and Usage Examples 

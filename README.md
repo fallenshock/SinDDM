@@ -32,7 +32,7 @@ If you use this code for your research, please cite our paper:
 
 ## Table of Contents
 * [Random samples from a single example](#Random-samples-from-a-single-example)
-* [SinDDM's applications](#SinDDM's-applications)
+* [SinDDM's applications](#SinDDMs-applications)
 * [Citation](#citation)
 * [Code and Usafe Examples](#Code-and-Usage-Examples)
 * [Data and Pretrained Models](#Data-and-Pretrained-Models)

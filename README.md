@@ -12,12 +12,12 @@
 ## Random samples from a single example
 With SinDDM, one can train a generative model from a single natural image, and then generate random samples from the given image, for example:
 
-![](imgs/teaser.PNG)
+![](imgs/gen_examples.png)
 
 
 ## SinDDM's applications
 SinDDM can also be used for a line of image manipulation tasks, especially image manipluations guided by text, for example:
- ![](imgs/manipulation.PNG)
+ ![](imgs/text_guidance.png)
 
 
 See section 4 in our [paper](https://arxiv.org/pdf/2211.16582.pdf) for more details about our results and experiments.

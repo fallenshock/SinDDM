@@ -110,7 +110,6 @@ def main():
         scale_mul=scale_mul,
         channels=3,
         timesteps=timesteps,
-        timesteps_trained=timesteps,
         train_full_t=True,
         scale_losses=rescale_losses,
         loss_factor=loss_factor,

@@ -49,6 +49,8 @@ If you use this code for your research, please cite our paper:
 ```
 python -m pip install -r requirements.txt
 ```
+### Original codebase:
+https://github.com/lucidrains/denoising-diffusion-pytorch
 
 This code was tested with python 3.8 and torch 1.13. 
 

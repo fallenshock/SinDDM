@@ -21,17 +21,13 @@ import numpy as np
 from tqdm import tqdm
 from einops import rearrange
 
-
 import matplotlib
-matplotlib.use('Agg')
 from matplotlib import pyplot as plt
 
 from skimage.exposure import match_histograms
-# import wandb
 
-# clip t2l
 from text2live_util.util import get_augmentations_template
-
+matplotlib.use('Agg')
 
 try:
     from apex import amp
@@ -39,7 +35,6 @@ try:
     APEX_AVAILABLE = True
 except:
     APEX_AVAILABLE = False
-
 
 
 def dilate_mask(mask, mode):
@@ -57,40 +52,20 @@ def dilate_mask(mask, mode):
     return mask
 
 
-# edit image for editing task
-def edit_image(dataset_folder, image_name, save_path, n_targets=1):
-    import cv2
-    image = cv2.imread(dataset_folder + image_name)
-    roi_source = cv2.selectROI(image)
-    roi_perm = [1, 0, 3, 2]
-    roi_source = [roi_source[i] for i in roi_perm]
-
-    roi_targets = []
-    for j in range(n_targets):
-        roi_target = cv2.selectROI(image)
-        roi_target = [roi_target[i] for i in roi_perm]
-        roi_targets.append(roi_target)
-
-    image = Image.open(dataset_folder + image_name)
-    image_tensor = transforms.ToTensor()(image)
-    for roi_target in roi_targets:
-        reshaped_roi_tensor = F.interpolate(image_tensor[None,:, roi_source[0]:roi_source[0]+roi_source[2], roi_source[1]:roi_source[1]+roi_source[3]], size=roi_target[2:])
-        image_tensor[:, roi_target[0]:roi_target[0]+roi_target[2], roi_target[1]:roi_target[1]+roi_target[3]] = reshaped_roi_tensor
-    save_name = f"edit_bb_{roi_target}.png"
-    # image_pil.save(f'{save_path}'+save_name)
-    utils.save_image(image_tensor, save_path+save_name)
-    return save_name
 # for roi_sampling
+
 def stat_from_bbs(image, bb):
     y_bb, x_bb, h_bb, w_bb = bb
     bb_mean = torch.mean(image[:, :,y_bb:y_bb+h_bb, x_bb:x_bb+w_bb], dim=(2,3), keepdim=True)
     bb_std = torch.std(image[:, :, y_bb:y_bb+h_bb, x_bb:x_bb+w_bb], dim=(2,3), keepdim=True)
     return [bb_mean, bb_std]
 
+
 def extract_patch(image, bb):
     y_bb, x_bb, h_bb, w_bb = bb
     image_patch = image[:, :,y_bb:y_bb+h_bb, x_bb:x_bb+w_bb]
     return image_patch
+
 
 # for clip sampling
 def thresholded_grad(grad, quantile=0.8):
@@ -106,8 +81,8 @@ def thresholded_grad(grad, quantile=0.8):
     sparse_grad = gead_energy_minus_energy_quant_clamp * unit_grad_energy #[b,c,h,w]
     return sparse_grad, grad_mask
 
+# helper functions
 
-# helpers functions
 
 def exists(x):
     return x is not None
@@ -160,15 +135,6 @@ class EMA():
         return old * self.beta + (1 - self.beta) * new
 
 
-class Residual(nn.Module):
-    def __init__(self, fn):
-        super().__init__()
-        self.fn = fn
-
-    def forward(self, x, *args, **kwargs):
-        return self.fn(x, *args, **kwargs) + x
-
-
 class SinusoidalPosEmb(nn.Module):
     def __init__(self, dim):
         super().__init__()
@@ -182,38 +148,6 @@ class SinusoidalPosEmb(nn.Module):
         emb = x[:, None] * emb[None, :]
         emb = torch.cat((emb.sin(), emb.cos()), dim=-1)
         return emb
-
-
-def Upsample(dim):
-    return nn.ConvTranspose2d(dim, dim, 4, 2, 1)
-
-
-def Downsample(dim):
-    return nn.Conv2d(dim, dim, 4, 2, 1)
-
-
-class LayerNorm(nn.Module):
-    def __init__(self, dim, eps=1e-5):
-        super().__init__()
-        self.eps = eps
-        self.g = nn.Parameter(torch.ones(1, dim, 1, 1))
-        self.b = nn.Parameter(torch.zeros(1, dim, 1, 1))
-
-    def forward(self, x):
-        var = torch.var(x, dim=1, unbiased=False, keepdim=True)
-        mean = torch.mean(x, dim=1, keepdim=True)
-        return (x - mean) / (var + self.eps).sqrt() * self.g + self.b
-
-
-class PreNorm(nn.Module):
-    def __init__(self, dim, fn):
-        super().__init__()
-        self.fn = fn
-        self.norm = LayerNorm(dim)
-
-    def forward(self, x):
-        x = self.norm(x)
-        return self.fn(x)
 
 
 # building block modules
@@ -250,9 +184,8 @@ class SinDDMConvBlock(nn.Module):
         return h + self.res_conv(x)
 
 
-# model
+# denoiser model
 
-# ConvNet
 class SinDDMNet(nn.Module):
     def __init__(
             self,
@@ -275,7 +208,6 @@ class SinDDMNet(nn.Module):
                 self.SinEmbTime = SinusoidalPosEmb(time_dim)
                 self.SinEmbScale = SinusoidalPosEmb(time_dim)
                 self.time_mlp = nn.Sequential(
-                    # SinusoidalPosEmb(time_dim),
                     nn.Linear(time_dim * 2, time_dim * 4),
                     nn.GELU(),
                     nn.Linear(time_dim * 4, time_dim)
@@ -300,7 +232,6 @@ class SinDDMNet(nn.Module):
 
         out_dim = default(out_dim, channels)
         self.final_conv = nn.Sequential(
-            # SinDDMConvBlock(dim, half_dim),
             nn.Conv2d(half_dim, out_dim, 1)
         )
 
@@ -313,7 +244,6 @@ class SinDDMNet(nn.Module):
             t_s_vec = torch.cat((t, s), dim=1)
             cond_vec = self.time_mlp(t_s_vec)
         else:
-            s = None
             t = self.time_mlp(time) if exists(self.time_mlp) else None
             cond_vec = t
 
@@ -322,16 +252,7 @@ class SinDDMNet(nn.Module):
         x = self.l3(x, cond_vec)
         x = self.l4(x, cond_vec)
 
-
         return self.final_conv(x)
-
-
-class ConvBlock(nn.Sequential):
-    def __init__(self, in_channel, out_channel, ker_size, padd, stride):
-        super(ConvBlock, self).__init__()
-        self.add_module('conv', nn.Conv2d(in_channel, out_channel, kernel_size=ker_size, stride=stride, padding=padd)),
-        self.add_module('norm', nn.BatchNorm2d(out_channel)),
-        self.add_module('LeakyRelu', nn.LeakyReLU(0.2, inplace=True))
 
 
 def extract(a, t, x_shape):
@@ -408,24 +329,21 @@ def create_img_scales(foldername, filename, n_scales=5, scale_step=1.411, image_
     rescale_losses = []
 
     # auto resize
-    rf_net = np.asarray(35)
+    rf_net = np.asarray(35) # denoiser net RF
     area_rf = rf_net ** 2
-    area_scale_0 = 3110 #
-    area_ratio = area_rf/area_scale_0
+    area_scale_0 = 3110  # defined such that area_rf/area_scale0 ~= 40%
+    # area_ratio = area_rf/area_scale_0
     s_dim = min(image_size[0], image_size[1])
     l_dim = max(image_size[0], image_size[1])
     scale_0_dim = int(round(np.sqrt(area_scale_0*s_dim/l_dim)))
     # clamp between 42 and 55
     scale_0_dim = 42 if scale_0_dim < 42 else (55 if scale_0_dim > 55 else scale_0_dim )
 
-    # scale_step_np = np.array(scale_step)
-    # n_scales_np = np.array(n_scales)
     if const_rf_ratio == 'small':
-        small_val = scale_0_dim # ~51 balloons_c
+        small_val = scale_0_dim
         min_val_image = min(image_size[0], image_size[1])
         n_scales = int(round( (np.log(min_val_image/small_val)) / (np.log(scale_step)) ) + 1)
         scale_step = np.exp((np.log(min_val_image / small_val)) / (n_scales - 1))
-
 
     for i in range(n_scales):
         cur_size = (int(round(image_size[0] / np.power(scale_step, n_scales - i - 1))),
@@ -438,21 +356,18 @@ def create_img_scales(foldername, filename, n_scales=5, scale_step=1.411, image_
         downscaled_images.append(cur_img)
         sizes.append(cur_size)
     for i in range(n_scales - 1):
-        # recon_image = F.interpolate(downscaled_images[i], size=sizes[i+1], mode='bilinear')
         recon_image = downscaled_images[i].resize(sizes[i + 1], Image.BILINEAR)
         recon_images.append(recon_image)
         rescale_losses.append(
-        np.linalg.norm(np.subtract(downscaled_images[i + 1], recon_image)) / np.asarray(recon_image).size)
-        # rescale_losses.append(np.sqrt(np.square(np.subtract(downscaled_images[i + 1], recon_image)).mean()))
+                np.linalg.norm(np.subtract(downscaled_images[i + 1], recon_image)) / np.asarray(recon_image).size)
         if create:
             path_to_save = foldername + 'scale_' + str(i + 1) + '_recon/'
             Path(path_to_save).mkdir(parents=True, exist_ok=True)
             recon_image.save(path_to_save + filename)
 
-    return  sizes, rescale_losses, recon_images, scale_step, n_scales
+    return sizes, rescale_losses, recon_images, scale_step, n_scales
 
 
-# diffusion on multiple scales using one net.
 class MultiScaleGaussianDiffusion(nn.Module):
     def __init__(
             self,
@@ -466,15 +381,14 @@ class MultiScaleGaussianDiffusion(nn.Module):
             image_sizes,
             scale_mul=(1, 1),
             channels=3,
-            timesteps=1000,
-            timesteps_trained=1000,
+            timesteps=100,
             train_full_t=False,
             scale_losses=None,
-            loss_factor=0.16,
+            loss_factor=1,
             loss_type='l1',
             betas=None,
             device=None,
-            reblurring=False,
+            reblurring=True,
             sample_limited_t=False,
             omega=0,
     ):
@@ -489,10 +403,9 @@ class MultiScaleGaussianDiffusion(nn.Module):
         self.image_sizes = ()
         self.scale_mul = scale_mul
 
-        self.sample_limited_t = sample_limited_t  # TODO: decide
+        self.sample_limited_t = sample_limited_t
         self.reblurring = reblurring
 
-        #save image from previous scale for reblurring
         self.img_prev_upsample = None
 
         # CLIP guided sampling
@@ -508,27 +421,21 @@ class MultiScaleGaussianDiffusion(nn.Module):
         self.text_embedds_lr = None
         self.clip_text_features = None
         self.clip_score = []
-        self.clip_mask = None  #TODO: mask update?
+        self.clip_mask = None
         self.llambda = 0
         self.x_recon_prev = None
+
         # for clip_roi
         self.clip_roi_guided_sampling = False
         self.clip_roi_bb = []
 
         # omega tests
-        self.omega=omega
-
-        # Salience guided sampling
-        self.saliency_guided_sampling = False
-        self.saliency_model = None
-        self.saliency_grad_scale = 0
-        self.saliency_ROI_bb = [0,0,0,0]  # y,x,h,w
+        self.omega = omega
 
         # ROI guided sampling
         self.roi_guided_sampling = False
         self.roi_bbs = []  # roi_bbs - list of [y,x,h,w]
         self.roi_bbs_stat = []  # roi_bbs_stat - list of [mean_tensor[1,3,1,1], std_tensor[1,3,1,1]]
-        self.roi_target_stat = []  # roi_target_stat - list of [mean_tensor[1,3,1,1], std_tensor[1,3,1,1]] per scale
         self.roi_target_patch = []
 
         for i in range(n_scales):  # flip xy->hw
@@ -578,11 +485,9 @@ class MultiScaleGaussianDiffusion(nn.Module):
         self.register_buffer('posterior_mean_coef2', to_torch(
             (1. - alphas_cumprod_prev) * np.sqrt(alphas) / (1. - alphas_cumprod)))
 
-        # if scale_loss is given calculate timesteps_trained automatically
         sigma_t = np.sqrt(1. - alphas_cumprod) / np.sqrt(alphas_cumprod) # sigma_t = sqrt_one_minus_alphas_cumprod_div_sqrt_alphas_cumprod
 
         # flag to force training of all the timesteps across all scales
-        # train_full_t = True
         if scale_losses is not None:
             for i in range(n_scales - 1):
                 self.num_timesteps_ideal.append(
@@ -593,17 +498,11 @@ class MultiScaleGaussianDiffusion(nn.Module):
                 else:
                     self.num_timesteps_trained.append(self.num_timesteps_ideal[i+1])
 
+        # gamma blur schedule
         gammas = torch.zeros(size=(n_scales - 1, self.num_timesteps), device=self.device)
-        max_timestep = max(self.num_timesteps_trained[1:])
         for i in range(n_scales - 1):
-            # gamma_i = np.linspace(start=0, stop=1, num=self.num_timesteps_trained[i + 1])
-            # gamma_i = sigma_t / (loss_factor * scale_losses[i])
-            # padding = max_timestep - self.num_timesteps_trained[i + 1]
             gammas[i,:] = (torch.tensor(sigma_t, device=self.device) / (loss_factor * scale_losses[i])).clamp(min=0, max=1)
-            # clip gammas
-                # F.pad(to_torch(gamma_i), (0, padding),
-                #       'constant', 0),)
-        # gammas = torch.stack(gammas, dim=0).to(self.device)
+
         self.register_buffer('gammas', gammas)
 
     # for roi_guided_sampling
@@ -658,9 +557,6 @@ class MultiScaleGaussianDiffusion(nn.Module):
         elif t[0]>0:
             x_tm1_mix = x_start
 
-            # posterior_log_variance_clipped = torch.zeros(x_t.shape, device=self.device)  #extract(self.posterior_log_variance_clipped, t, x_t.shape)
-            # posterior_variance = extract(self.posterior_variance, t, x_t.shape)
-            # posterior_log_variance_clipped = extract(self.posterior_log_variance_clipped, t, x_t.shape)
             posterior_variance_low = torch.zeros(x_t.shape,
                                                  device=self.device)  # extract(self.posterior_variance, t, x_t.shape)
             posterior_variance_high = 1 - extract(self.alphas_cumprod, t - 1, x_t.shape)
@@ -678,9 +574,6 @@ class MultiScaleGaussianDiffusion(nn.Module):
 
         else:
             posterior_mean = x_start  # for t==0 no noise added
-            # posterior_variance = torch.zeros(x_t.shape, device=self.device)  # extract(self.posterior_variance, t, x_t.shape)
-            # posterior_log_variance_clipped = torch.zeros(x_t.shape, device=self.device)  #extract(self.posterior_log_variance_clipped, t, x_t.shape)
-            # not used! ##########
             posterior_variance = extract(self.posterior_variance, t, x_t.shape)
             posterior_log_variance_clipped = extract(self.posterior_log_variance_clipped, t, x_t.shape)
 
@@ -702,7 +595,7 @@ class MultiScaleGaussianDiffusion(nn.Module):
                              nrow=4)
 
         # or s < self.n_scales - 1
-        if self.clip_guided_sampling and (self.stop_guidance <= t[0] or s < self.n_scales - 1) and (t[0]<self.num_timesteps_ideal[s]-0) and self.guidance_sub_iters[s]>0:  # and t[0] < 11:  # and s > 0:
+        if self.clip_guided_sampling and (self.stop_guidance <= t[0] or s < self.n_scales - 1) and (t[0]<self.num_timesteps_ideal[s]) and self.guidance_sub_iters[s]>0:
             if clip_denoised:
                 x_recon.clamp_(-1., 1.)
             if self.clip_mask is not None and (self.stop_guidance <= t[0]):
@@ -713,7 +606,6 @@ class MultiScaleGaussianDiffusion(nn.Module):
             x_recon_renorm = (x_recon + 1) * 0.5
             for i in range(self.guidance_sub_iters[s]):
                 self.clip_model.zero_grad()
-                # if s == self.n_scales-1:
                 if s >= 0:
                     score = -self.clip_model.calculate_clip_loss(x_recon_renorm, self.text_embedds_hr)
                 else:
@@ -749,7 +641,6 @@ class MultiScaleGaussianDiffusion(nn.Module):
                 # plot score
                 self.clip_score.append(score.detach().cpu())
             self.x_recon_prev = x_recon.detach()
-            # model_mean, posterior_variance, posterior_log_variance = self.q_posterior(x_start=x_recon, x_t=x, t=t)
             plt.rcParams['figure.figsize'] = [16, 8]
             plt.plot(self.clip_score)
             plt.grid(True)
@@ -782,10 +673,9 @@ class MultiScaleGaussianDiffusion(nn.Module):
             model_mean, posterior_variance, posterior_log_variance = self.q_posterior(x_start=x_recon_modified, x_t_mix=x_t_mix, x_t=x, t=t, s=s, pred_noise=pred_noise)
 
         else:  # normal sampling
-            # reblurring during sampling TODO: reblurring before or after guidance? currently used only in SAMPLING
+            # mixing blurry image from previous sample with current (reblurring) during sampling
             if self.reblurring:
                 if int(s) > 0:
-
                     if t[0] > 0:
 
                         if self.save_interm:
@@ -799,10 +689,6 @@ class MultiScaleGaussianDiffusion(nn.Module):
                         x_tm1_mix = extract(cur_gammas, t-1, x_recon.shape) * self.img_prev_upsample + \
                                   (1 - extract(cur_gammas, t-1, x_recon.shape)) * x_recon  # mix blurred and orig
 
-                        # if clip_denoised:
-                        #     x_tm1_mix.clamp_(-1., 1.)
-                        # if clip_denoised:
-                        #     x_t_mix.clamp_(-1., 1.)
                         if self.save_interm:
                             final_results_folder = Path(str(self.results_folder / f'interm_samples_scale_{s}'))
                             final_results_folder.mkdir(parents=True, exist_ok=True)
@@ -811,16 +697,13 @@ class MultiScaleGaussianDiffusion(nn.Module):
                                              str(final_results_folder / f'mixed_input_t-{t[0]:03}_s-{s}.png'),
                                              nrow=4)
                     else:  # t == 0
-                        x_tm1_mix = x_recon  #TODO: rearrange code
+                        x_tm1_mix = x_recon
                     if clip_denoised:
                         x_t_mix.clamp_(-1., 1.)
-                    if clip_denoised:
                         x_tm1_mix.clamp_(-1., 1.)
+
                     model_mean, posterior_variance, posterior_log_variance = self.q_posterior(x_start=x_tm1_mix, x_t_mix=x_t_mix, x_t=x,
                                                                                               t=t, s=s, pred_noise=pred_noise)  # old sampling
-                    # TODO: decide where clamp
-                    # if clip_denoised:
-                    #     model_mean.clamp_(-1., 1.)
 
                 else:  # use regular ddpm noise for s==0
                     if clip_denoised:
@@ -828,14 +711,13 @@ class MultiScaleGaussianDiffusion(nn.Module):
                     model_mean, posterior_variance, posterior_log_variance = self.q_posterior(x_start=x_recon, x_t_mix=x_t_mix,x_t=x,
                                                                                               t=t, s=s, pred_noise=pred_noise)  # old sampling
 
-            else:
+            else:  # no reblurring
                 if clip_denoised:
                     x_t_mix.clamp_(-1., 1.)
-                if clip_denoised:
                     x_recon.clamp_(-1., 1.)
-                model_mean, posterior_variance, posterior_log_variance = self.q_posterior(x_start=x_recon, x_t_mix=x_t_mix, x_t=x, t=t, s=s, pred_noise=pred_noise)  # old sampling
-            # if self.sample_limited_t and s < (self.n_scales - 1) and t[0] == self.num_timesteps_ideal[s + 1]:
-            #     model_mean = x_recon
+
+                model_mean, posterior_variance, posterior_log_variance = self.q_posterior(x_start=x_recon, x_t_mix=x_t_mix, x_t=x, t=t, s=s, pred_noise=pred_noise)
+
         return model_mean, posterior_variance, posterior_log_variance
 
     @torch.no_grad()
@@ -845,18 +727,10 @@ class MultiScaleGaussianDiffusion(nn.Module):
         model_mean, _, model_log_variance = self.p_mean_variance(x=x, t=t, s=s, clip_denoised=clip_denoised)
 
         noise = noise_like(x.shape, device, repeat_noise)
-        # no noise when t == 0
-        # if self.sample_limited_t and s < (self.n_scales-1):
-        #     t_min = self.num_timesteps_ideal[s + 1]
-        #     nonzero_mask = (1 - (t == t_min).float()).reshape(b, *((1,) * (len(x.shape) - 1)))
-        # else:
         nonzero_mask = (1 - (t == 0).float()).reshape(b, *((1,) * (len(x.shape) - 1)))
-        # nonzero_mask_s = torch.tensor([s == 0], device=self.device).float()
         nonzero_mask_s = torch.tensor([True], device=self.device).float()
-        # if s==0:
+
         return model_mean + nonzero_mask_s * nonzero_mask * (0.5 * model_log_variance).exp() * noise
-        # else:
-        #     return model_mean
 
 
     @torch.no_grad()
@@ -878,11 +752,6 @@ class MultiScaleGaussianDiffusion(nn.Module):
         else:
             t_min = 0
         for i in tqdm(reversed(range(t_min, self.num_timesteps)), desc='sampling loop time step', total=self.num_timesteps):
-            # if self.save_interm:
-            #     final_img = (img + 1) * 0.5
-            #     utils.save_image(final_img,
-            #                      str(final_results_folder / f'input_t-{i:03}_s-{s}.png'),
-            #                      nrow=4)
             img = self.p_sample(img, torch.full((b,), i, device=device, dtype=torch.long), s)
             if self.save_interm:
                 final_img = (img + 1) * 0.5
@@ -925,11 +794,9 @@ class MultiScaleGaussianDiffusion(nn.Module):
             utils.save_image(final_img,
                              str(final_results_folder / f'noisy_input_s_{s}.png'),
                              nrow=4)
-        # remove clip mask from previous scale (for new to be created)
-        # self.clip_mask = None
+
         if self.clip_mask is not None:
-            # float_clip_mask = self.clip_mask.float()
-            if s>0:
+            if s > 0:
                 mul_size = [int(self.image_sizes[s][0]* self.scale_mul[0]), int(self.image_sizes[s][1]* self.scale_mul[1])]
                 self.clip_mask = F.interpolate(self.clip_mask, size=mul_size, mode='bilinear')#.bool()
                 self.x_recon_prev = F.interpolate(self.x_recon_prev, size=mul_size, mode='bilinear')
@@ -968,22 +835,6 @@ class MultiScaleGaussianDiffusion(nn.Module):
 
         img = F.interpolate(img, size=image_size, mode='bilinear')
         return self.p_sample_via_scale_loop(batch_size, img, s, custom_t=custom_t)
-
-    @torch.no_grad()
-    def interpolate(self, x1, x2, t=None, lam=0.5):
-        b, *_, device = *x1.shape, x1.device
-        t = default(t, self.num_timesteps - 1)
-
-        assert x1.shape == x2.shape
-
-        t_batched = torch.stack([torch.tensor(t, device=device)] * b)
-        xt1, xt2 = map(lambda x: self.q_sample(x, t=t_batched), (x1, x2))
-
-        img = (1 - lam) * xt1 + lam * xt2
-        for i in tqdm(reversed(range(0, t)), desc='interpolation sample time step', total=t):
-            img = self.p_sample(img, torch.full((b,), i, device=device, dtype=torch.long))
-
-        return img
 
     def q_sample(self, x_start, t, noise=None):
         noise = default(noise, lambda: torch.randn_like(x_start))
@@ -1115,7 +966,6 @@ class MultiscaleTrainer(object):
         self.dl_list = []
         self.data_list = []
 
-
         for i in range(n_scales):
             self.input_paths.append(folder + 'scale_' + str(i))
             self.output_paths.append(results_folder + '/scale_' + str(i))
@@ -1152,7 +1002,6 @@ class MultiscaleTrainer(object):
 
         self.reset_parameters()
         self.args = args
-
 
     def reset_parameters(self):
         self.ema_model.load_state_dict(self.model.state_dict())
@@ -1203,19 +1052,16 @@ class MultiscaleTrainer(object):
             # s_pix = torch.randint(0, self.tot_sqrt_pix-1, (1,), device=data_list[0][0].device).long()
             # s = torch.argmax((torch.ge(self.sqrt_pix_cumsum, s_pix)).type(torch.uint8)).long()
             # t weighted sampling
-            s = torch.multinomial(input=s_weights, num_samples=1)
+            s = torch.multinomial(input=s_weights, num_samples=1)  # uniform when train_full_t = True
             for i in range(self.gradient_accumulate_every):
                 data = self.data_list[s]
                 loss = self.model(data, s)
                 loss_avg += loss.item()
 
-                # self.running_scale.append(int(s.cpu()))
-                # self.avg_t = []
                 backwards(loss / self.gradient_accumulate_every, self.opt)
             if self.step % self.avg_window == 0:
                 print(f'step:{self.step} loss:{loss_avg/self.avg_window}')
                 self.running_loss.append(loss_avg/self.avg_window)
-                # wandb.log({"loss": loss_avg/self.avg_window})
                 loss_avg = 0
             self.opt.step()
             self.opt.zero_grad()
@@ -1294,7 +1140,6 @@ class MultiscaleTrainer(object):
             for b in range(batch_size):
                 # utils.save_image(final_img[b], str(final_results_folder / res_sub_folder) + f'_out_b{b}_{desc}_sm_{scale_mul[0]}_{scale_mul[1]}.png')
                 utils.save_image(final_img[b], str(final_results_folder / res_sub_folder) + f'_out_b{b}.png')
-
 
 
     def image2image(self, input_folder='', input_file='', mask='', hist_ref_path='', image_name='', start_s=1, custom_t=None, batch_size=16, scale_mul=(1, 1), device=None, use_hist=False, save_unbatched=True, auto_scale=None, mode=None):

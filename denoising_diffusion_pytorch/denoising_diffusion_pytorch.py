@@ -1224,15 +1224,15 @@ class MultiscaleTrainer(object):
 
         image_roi.requires_grad_(True)
         image_roi_renorm = (image_roi + 1) * 0.5
-        final_results_folder = Path(str(self.ema_model.results_folder / f'interm_samples_clip_roi'))
-        final_results_folder.mkdir(parents=True, exist_ok=True)
+        interm_results_folder = Path(str(self.ema_model.results_folder / f'interm_samples_clip_roi'))
+        interm_results_folder.mkdir(parents=True, exist_ok=True)
         for i in tqdm(range(num_clip_iters)):
             clip_model.zero_grad()
             score = -clip_model.calculate_clip_loss(image_roi_renorm, text_embedds)
             clip_grad = torch.autograd.grad(score, image_roi, create_graph=False)[0]
             if self.ema_model.save_interm:
                 utils.save_image((image_roi.clamp(-1., 1.) + 1) * 0.5,
-                                 str(final_results_folder / f'iter_{i}.png'),
+                                 str(interm_results_folder / f'iter_{i}.png'),
                                  nrow=4)
 
             image_roi_prev_norm = torch.linalg.vector_norm(image_roi, dim=(1, 2, 3), keepdim=True)
@@ -1260,6 +1260,8 @@ class MultiscaleTrainer(object):
                                                       custom_t=num_denoising_steps,
                                                       scale_mul=(1,1))
         final_img_renorm = (final_image + 1) * 0.5
+        final_results_folder = Path(str(self.ema_model.results_folder / f'final_samples'))
+        final_results_folder.mkdir(parents=True, exist_ok=True)
         utils.save_image(final_img_renorm, str(final_results_folder / (desc + '.png')), nrow=4)
         final_results_folder = Path(str(self.results_folders[0] / f'final_samples_unbatched_{desc}'))
         final_results_folder.mkdir(parents=True, exist_ok=True)

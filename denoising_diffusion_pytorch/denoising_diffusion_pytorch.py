@@ -37,6 +37,7 @@ except:
     APEX_AVAILABLE = False
 
 
+
 def dilate_mask(mask, mode):
     if mode == "harmonization":
         element = morphology.disk(radius=7)
@@ -426,7 +427,6 @@ class MultiScaleGaussianDiffusion(nn.Module):
         self.x_recon_prev = None
 
         # for clip_roi
-        self.clip_roi_guided_sampling = False
         self.clip_roi_bb = []
 
         # omega tests
@@ -523,25 +523,18 @@ class MultiScaleGaussianDiffusion(nn.Module):
         return mean, variance, log_variance
 
     def predict_start_from_noise(self, x_t, t, s, noise):
-        if self.loss_type == "l1_pred_img":
-            return (
-                    noise
-            )
-        else:
-            x_recon_ddpm = extract(self.sqrt_recip_alphas_cumprod, t, x_t.shape) * x_t - extract(
-                self.sqrt_recipm1_alphas_cumprod, t, x_t.shape) * noise
 
-            if not self.reblurring or s == 0:
-            # if True:  # TODO: !!!
-                return x_recon_ddpm, x_recon_ddpm
-            else:
-                cur_gammas = self.gammas[s - 1].reshape(-1).clamp(0, 0.55)  # TODO was 0.99 - now decide
-                x_0_pred = (x_recon_ddpm - extract(cur_gammas, t, x_recon_ddpm.shape) * self.img_prev_upsample) / (
-                            1 - extract(cur_gammas, t, x_recon_ddpm.shape))
-                # overwrite x_t_mix with reblur from prev scale combined with x_0
-                # x_recon_ddpm = extract(cur_gammas, t, x_0_pred.shape) * self.img_prev_upsample + \
-                #           (1 - extract(cur_gammas, t, x_0_pred.shape)) * x_0_pred  # mix blurred and orig
-                return (x_0_pred, x_recon_ddpm)
+        x_recon_ddpm = extract(self.sqrt_recip_alphas_cumprod, t, x_t.shape) * x_t - extract(
+            self.sqrt_recipm1_alphas_cumprod, t, x_t.shape) * noise
+
+        if not self.reblurring or s == 0:
+            return x_recon_ddpm, x_recon_ddpm  # x_t_mix = x_tm1_mix
+        else:
+            cur_gammas = self.gammas[s - 1].reshape(-1).clamp(0, 0.55)
+            x_tm1_mix = (x_recon_ddpm - extract(cur_gammas, t, x_recon_ddpm.shape) * self.img_prev_upsample) / (
+                        1 - extract(cur_gammas, t, x_recon_ddpm.shape))
+            x_t_mix = x_recon_ddpm
+            return x_tm1_mix, x_t_mix
 
 
     def q_posterior(self, x_start, x_t_mix, x_t, t, s, pred_noise):  # x_start is x_tm1_mix
@@ -560,7 +553,7 @@ class MultiScaleGaussianDiffusion(nn.Module):
             posterior_variance_low = torch.zeros(x_t.shape,
                                                  device=self.device)  # extract(self.posterior_variance, t, x_t.shape)
             posterior_variance_high = 1 - extract(self.alphas_cumprod, t - 1, x_t.shape)
-            omega = 0.0 if s == 0 else self.omega
+            omega = self.omega
             posterior_variance = (1-omega) * posterior_variance_low + omega * posterior_variance_high
             posterior_log_variance_clipped = torch.log(posterior_variance.clamp(1e-20,None))
 
@@ -570,7 +563,6 @@ class MultiScaleGaussianDiffusion(nn.Module):
                              torch.sqrt(1-extract(self.alphas_cumprod, t-1, x_t.shape) - var_t) * \
                              (x_t - extract(self.sqrt_alphas_cumprod, t, x_t.shape) * x_t_mix) / \
                              extract(self.sqrt_one_minus_alphas_cumprod, t, x_t.shape)
-                             # pred_noise
 
         else:
             posterior_mean = x_start  # for t==0 no noise added
@@ -591,28 +583,33 @@ class MultiScaleGaussianDiffusion(nn.Module):
             final_results_folder.mkdir(parents=True, exist_ok=True)
             final_img = (x_recon.clamp(-1., 1.) + 1) * 0.5
             utils.save_image(final_img,
-                             str(final_results_folder / f'input_t-{t[0]:03}_s-{s}.png'),
+                             str(final_results_folder / f'denoised_t-{t[0]:03}_s-{s}.png'),
                              nrow=4)
-
-        # or s < self.n_scales - 1
-        if self.clip_guided_sampling and (self.stop_guidance <= t[0] or s < self.n_scales - 1) and (t[0]<self.num_timesteps_ideal[s]) and self.guidance_sub_iters[s]>0:
+        # CLIP guidance
+        if self.clip_guided_sampling and (self.stop_guidance <= t[0] or s < self.n_scales - 1) and self.guidance_sub_iters[s] > 0:
             if clip_denoised:
                 x_recon.clamp_(-1., 1.)
-            if self.clip_mask is not None and (self.stop_guidance <= t[0]):
+
+            # preserve CLIP changes from previous iteration
+            if self.clip_mask is not None:
                 x_recon = x_recon * (1 - self.clip_mask) + (
                         (1 - self.llambda) * self.x_recon_prev + self.llambda * x_recon) * self.clip_mask
             x_recon.requires_grad_(True)  # for autodiff
-            # AUGMENTS
+
             x_recon_renorm = (x_recon + 1) * 0.5
-            for i in range(self.guidance_sub_iters[s]):
+            for i in range(self.guidance_sub_iters[s]):  # can experiment with more than 1 iter. per timestep
                 self.clip_model.zero_grad()
-                if s >= 0:
+                # choose text embedding augmentation (High Res / Low Res)
+                if s > 0:
                     score = -self.clip_model.calculate_clip_loss(x_recon_renorm, self.text_embedds_hr)
                 else:
                     score = -self.clip_model.calculate_clip_loss(x_recon_renorm, self.text_embedds_lr)
-                clip_log_grad = torch.autograd.grad(score, x_recon, create_graph=False)[0]
+
+                clip_grad = torch.autograd.grad(score, x_recon, create_graph=False)[0]
+
+                # create CLIP mask depending on the strongest gradients locations
                 if self.clip_mask is None:
-                    clip_log_grad, clip_mask = thresholded_grad(grad=clip_log_grad, quantile=self.quantile)
+                    clip_grad, clip_mask = thresholded_grad(grad=clip_grad, quantile=self.quantile)
                     self.clip_mask = clip_mask.float()
 
                 if self.save_interm:
@@ -621,26 +618,28 @@ class MultiScaleGaussianDiffusion(nn.Module):
                     final_mask = self.clip_mask.type(torch.float64)
 
                     utils.save_image(final_mask,
-                                     str(final_results_folder / f'input_noise_s-{s}.png'),
+                                     str(final_results_folder / f'clip_mask_s-{s}.png'),
                                      nrow=4)
                     utils.save_image((x_recon.clamp(-1., 1.) + 1) * 0.5,
-                                     str(final_results_folder / f'input_noise_s-{s}_{t[0]}_subiter_{i}.png'),
+                                     str(final_results_folder / f'clip_out_s-{s}_t-{t[0]}_subiter_{i}.png'),
                                      nrow=4)
 
-                x_recon_prev_mask_norm = torch.linalg.vector_norm(x_recon*self.clip_mask, dim=(1,2,3), keepdim=True)
+                #normalize gradients
                 division_norm = torch.linalg.vector_norm(x_recon * self.clip_mask, dim=(1,2,3), keepdim=True) / torch.linalg.vector_norm(
-                    clip_log_grad * self.clip_mask, dim=(1,2,3), keepdim=True)
-                x_recon += self.clip_strength * division_norm * clip_log_grad * self.clip_mask
-                x_recon_mask_norm = torch.linalg.vector_norm(x_recon * self.clip_mask, dim=(1, 2, 3), keepdim=True)
-                keep_norm = False #TODO: consult with Vova and Matan
-                if keep_norm:
-                    x_recon = x_recon * (1 - self.clip_mask) + x_recon * self.clip_mask * (x_recon_prev_mask_norm / x_recon_mask_norm)
+                    clip_grad * self.clip_mask, dim=(1,2,3), keepdim=True)
+
+                # update clean image
+                x_recon += self.clip_strength * division_norm * clip_grad * self.clip_mask
 
                 x_recon.clamp_(-1., 1.)
+                # prepare for next sub-iteration
                 x_recon_renorm = (x_recon + 1) * 0.5
                 # plot score
                 self.clip_score.append(score.detach().cpu())
+
             self.x_recon_prev = x_recon.detach()
+
+            # plot clip loss
             plt.rcParams['figure.figsize'] = [16, 8]
             plt.plot(self.clip_score)
             plt.grid(True)
@@ -648,76 +647,25 @@ class MultiScaleGaussianDiffusion(nn.Module):
             plt.savefig(str(self.results_folder / 'clip_score'))
             plt.clf()
 
-            self.x_recon_prev = x_recon.detach()
-            if t[0] > 0 and self.reblurring:
-                x_tm1_mix = extract(cur_gammas, t - 1, x_recon.shape) * self.img_prev_upsample + \
-                            (1 - extract(cur_gammas, t - 1, x_recon.shape)) * x_recon  # mix blurred and orig
-            else:  # t == 0
-                x_tm1_mix = x_recon  # TODO: rearrange code
+        # ROI guided sampling
+        elif self.roi_guided_sampling and (s < self.n_scales-1):
+            x_recon = self.roi_patch_modification(x_recon, scale=s)
 
-            if clip_denoised:
-                x_tm1_mix.clamp_(-1., 1.)
-            if clip_denoised:
-                x_t_mix.clamp_(-1., 1.)
+        # else normal sampling
 
-            model_mean, posterior_variance, posterior_log_variance = self.q_posterior(x_start=x_tm1_mix, x_t_mix=x_t_mix, x_t=x, t=t, s=s, pred_noise=pred_noise)
-            plt.rcParams['figure.figsize'] = [16, 8]
-            plt.plot(self.clip_score)
-            plt.grid(True)
-            # plt.ylim((0, 0.2))
-            plt.savefig(str(self.results_folder / 'clip_score'))
-            plt.clf()
+        if int(s) > 0 and t[0] > 0 and self.reblurring:
+            x_tm1_mix = extract(cur_gammas, t - 1, x_recon.shape) * self.img_prev_upsample + \
+                        (1 - extract(cur_gammas, t - 1, x_recon.shape)) * x_recon  # mix blurred and orig
+        else:
+            x_tm1_mix = x_recon
 
-        elif self.roi_guided_sampling and (s <= 0):
-            x_recon_modified = self.roi_patch_modification(x_recon, scale=s)
-            model_mean, posterior_variance, posterior_log_variance = self.q_posterior(x_start=x_recon_modified, x_t_mix=x_t_mix, x_t=x, t=t, s=s, pred_noise=pred_noise)
+        if clip_denoised:
+            x_tm1_mix.clamp_(-1., 1.)
+            x_t_mix.clamp_(-1., 1.)
 
-        else:  # normal sampling
-            # mixing blurry image from previous sample with current (reblurring) during sampling
-            if self.reblurring:
-                if int(s) > 0:
-                    if t[0] > 0:
-
-                        if self.save_interm:
-                            final_results_folder = Path(str(self.results_folder / f'interm_samples_scale_{s}'))
-                            final_results_folder.mkdir(parents=True, exist_ok=True)
-                            final_img = (self.img_prev_upsample.clamp(-1., 1.) + 1) * 0.5
-                            utils.save_image(final_img,
-                                             str(final_results_folder / f'upsampled_input_t-{t[0]:03}_s-{s}.png'),
-                                             nrow=4)
-
-                        x_tm1_mix = extract(cur_gammas, t-1, x_recon.shape) * self.img_prev_upsample + \
-                                  (1 - extract(cur_gammas, t-1, x_recon.shape)) * x_recon  # mix blurred and orig
-
-                        if self.save_interm:
-                            final_results_folder = Path(str(self.results_folder / f'interm_samples_scale_{s}'))
-                            final_results_folder.mkdir(parents=True, exist_ok=True)
-                            final_img = (x_tm1_mix.clamp(-1., 1.) + 1) * 0.5
-                            utils.save_image(final_img,
-                                             str(final_results_folder / f'mixed_input_t-{t[0]:03}_s-{s}.png'),
-                                             nrow=4)
-                    else:  # t == 0
-                        x_tm1_mix = x_recon
-                    if clip_denoised:
-                        x_t_mix.clamp_(-1., 1.)
-                        x_tm1_mix.clamp_(-1., 1.)
-
-                    model_mean, posterior_variance, posterior_log_variance = self.q_posterior(x_start=x_tm1_mix, x_t_mix=x_t_mix, x_t=x,
-                                                                                              t=t, s=s, pred_noise=pred_noise)  # old sampling
-
-                else:  # use regular ddpm noise for s==0
-                    if clip_denoised:
-                        x_recon.clamp_(-1., 1.)
-                    model_mean, posterior_variance, posterior_log_variance = self.q_posterior(x_start=x_recon, x_t_mix=x_t_mix,x_t=x,
-                                                                                              t=t, s=s, pred_noise=pred_noise)  # old sampling
-
-            else:  # no reblurring
-                if clip_denoised:
-                    x_t_mix.clamp_(-1., 1.)
-                    x_recon.clamp_(-1., 1.)
-
-                model_mean, posterior_variance, posterior_log_variance = self.q_posterior(x_start=x_recon, x_t_mix=x_t_mix, x_t=x, t=t, s=s, pred_noise=pred_noise)
-
+        model_mean, posterior_variance, posterior_log_variance = self.q_posterior(x_start=x_tm1_mix, x_t_mix=x_t_mix,
+                                                                                  x_t=x, t=t, s=s,
+                                                                                  pred_noise=pred_noise)
         return model_mean, posterior_variance, posterior_log_variance
 
     @torch.no_grad()
@@ -1046,12 +994,8 @@ class MultiscaleTrainer(object):
         loss_avg = 0
         s_weights = torch.tensor(self.model.num_timesteps_trained, device=self.device, dtype=torch.float)
         while self.step < self.train_num_steps:
-            # uniform sampling
-            # s = torch.randint(0, self.n_scales, (1,), device='cuda')  # .long()
-            # uncomment for histogram sampling
-            # s_pix = torch.randint(0, self.tot_sqrt_pix-1, (1,), device=data_list[0][0].device).long()
-            # s = torch.argmax((torch.ge(self.sqrt_pix_cumsum, s_pix)).type(torch.uint8)).long()
-            # t weighted sampling
+
+            # t weighted multinomial sampling
             s = torch.multinomial(input=s_weights, num_samples=1)  # uniform when train_full_t = True
             for i in range(self.gradient_accumulate_every):
                 data = self.data_list[s]
@@ -1138,16 +1082,13 @@ class MultiscaleTrainer(object):
             final_results_folder = Path(str(self.results_folders[0] / f'final_samples_unbatched_{desc}'))
             final_results_folder.mkdir(parents=True, exist_ok=True)
             for b in range(batch_size):
-                # utils.save_image(final_img[b], str(final_results_folder / res_sub_folder) + f'_out_b{b}_{desc}_sm_{scale_mul[0]}_{scale_mul[1]}.png')
                 utils.save_image(final_img[b], str(final_results_folder / res_sub_folder) + f'_out_b{b}.png')
 
 
     def image2image(self, input_folder='', input_file='', mask='', hist_ref_path='', image_name='', start_s=1, custom_t=None, batch_size=16, scale_mul=(1, 1), device=None, use_hist=False, save_unbatched=True, auto_scale=None, mode=None):
         if custom_t is None:
             custom_t = [0, 0, 0, 0, 0, 0, 0] # 0 - use default sampling t
-        ds_size = self.image_sizes[start_s] # inject @ scale #start_s
         orig_image = self.data_list[self.n_scales-1][0][0][None,:,:,:]
-        orig_image = orig_image.repeat(batch_size, 1, 1, 1)
         input_path = os.path.join(input_folder, input_file)
         input_img = Image.open(input_path).convert("RGB")
         if mode == 'harmonization':
@@ -1164,7 +1105,6 @@ class MultiscaleTrainer(object):
             if scaler > 1:
                 image_size = (int(image_size[0] / scaler), int(image_size[1] / scaler))
                 input_img = input_img.resize(image_size, Image.LANCZOS)
-        # input_img_ds = input_img.resize((ds_size[1], ds_size[0]), Image.LANCZOS)
 
         if use_hist:
             image_name = image_name.rsplit(".", 1)[0] + '.png'
@@ -1269,15 +1209,9 @@ class MultiscaleTrainer(object):
     def clip_roi_sampling(self, clip_model, text_input, strength, sample_batch_size, custom_t_list=None,
                       num_clip_iters=100, num_denoising_steps=2, clip_roi_bb=None, save_unbatched=False, full_grad=False):
 
-        self.ema_model.clip_strength = strength
-        self.ema_model.clip_text = text_input
         text_embedds = clip_model.get_text_embedding(text_input, template=get_augmentations_template('lr'))
-        self.ema_model.clip_roi_guided_sampling = True
-        self.ema_model.clip_model = clip_model
-        self.ema_model.clip_score = []
-        self.ema_model.clip_roi_bb = clip_roi_bb
-        strength_string = f'{strength}'  # '_'.join(str(e) for e in grad_scales)
-        n_aug = self.ema_model.clip_model.cfg["n_aug"]
+        strength_string = f'{strength}'
+        n_aug = clip_model.cfg["n_aug"]
         desc = f"clip_roi_{text_input.replace(' ', '_')}_n_aug{n_aug}_str_" + strength_string + "_n_iters_" + str(num_clip_iters) + \
                f'_{str(datetime.datetime.now()).replace(":", "_")}'
         image = self.data_list[self.n_scales-1][0][0][None,:,:,:]
@@ -1288,8 +1222,6 @@ class MultiscaleTrainer(object):
         else:
             image_roi = image[:,:,clip_roi_bb[0]:clip_roi_bb[0]+clip_roi_bb[2],clip_roi_bb[1]:clip_roi_bb[1]+clip_roi_bb[3]].clone()
 
-
-        # image_roi = image_roi
         image_roi.requires_grad_(True)
         image_roi_renorm = (image_roi + 1) * 0.5
         final_results_folder = Path(str(self.ema_model.results_folder / f'interm_samples_clip_roi'))
@@ -1297,7 +1229,7 @@ class MultiscaleTrainer(object):
         for i in tqdm(range(num_clip_iters)):
             clip_model.zero_grad()
             score = -clip_model.calculate_clip_loss(image_roi_renorm, text_embedds)
-            clip_log_grad = torch.autograd.grad(score, image_roi, create_graph=False)[0]
+            clip_grad = torch.autograd.grad(score, image_roi, create_graph=False)[0]
             if self.ema_model.save_interm:
                 utils.save_image((image_roi.clamp(-1., 1.) + 1) * 0.5,
                                  str(final_results_folder / f'iter_{i}.png'),
@@ -1305,10 +1237,9 @@ class MultiscaleTrainer(object):
 
             image_roi_prev_norm = torch.linalg.vector_norm(image_roi, dim=(1, 2, 3), keepdim=True)
             division_norm = torch.linalg.vector_norm(image_roi, dim=(1,2,3), keepdim=True) / torch.linalg.vector_norm(
-                clip_log_grad, dim=(1,2,3), keepdim=True)
+                clip_grad, dim=(1,2,3), keepdim=True)
             image_roi_prev = image_roi
-            # image_roi.requires_grad_(False)
-            image_roi = image_roi_prev + strength* division_norm * clip_log_grad
+            image_roi = image_roi_prev + strength* division_norm * clip_grad
             image_roi_norm = torch.linalg.vector_norm(image_roi, dim=(1, 2, 3), keepdim=True)
             keep_norm = False
             if keep_norm:
@@ -1339,22 +1270,13 @@ class MultiscaleTrainer(object):
             for b in range(sample_batch_size):
                 utils.save_image(final_img_renorm[b], os.path.join(final_results_folder, f'{desc}_out_b{b}.png'))
 
-        self.ema_model.clip_roi_guided_sampling = False
-
-    def roi_guided_sampling(self, target_image_path, custom_t_list=None, target_roi=None, roi_bb_list=None, save_unbatched=False, batch_size=4 ,scale_mul=(1, 1)):
-        # [100:125,70:88,:] - target
+    def roi_guided_sampling(self, custom_t_list=None, target_roi=None, roi_bb_list=None, save_unbatched=False, batch_size=4 ,scale_mul=(1, 1)):
         self.ema_model.roi_guided_sampling = True
-        target_image = Image.open((target_image_path)).convert("RGB")
-        target_tensor = transforms.ToTensor()(target_image).to(self.device) * 2 - 1
-
         self.ema_model.roi_bbs = roi_bb_list
-
-        target_bb = target_roi  # bottom bush from forest
-        for scale in range(self.n_scales):  # TODO for all scales
+        target_bb = target_roi
+        for scale in range(self.n_scales):
 
             target_bb_rescaled = [int(bb_i / np.power(self.scale_step, self.n_scales - scale - 1)) for bb_i in target_bb]
-            data = self.data_list[scale]
-            self.ema_model.roi_target_stat.append(stat_from_bbs(data[0][0][None,:,:,:], target_bb_rescaled))  # roi_target_stat - [mean_tensor[1,3,1,1], std_tensor[1,3,1,1]]
             self.ema_model.roi_target_patch.append(extract_patch(self.data_list[scale][0][0][None, :,:,:], target_bb_rescaled))
 
         self.sample_scales(scale_mul=scale_mul,  # H,W

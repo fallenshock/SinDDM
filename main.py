@@ -180,10 +180,9 @@ def main():
                     "clip_affine_transform_fill": True,
                     "n_aug": 16}
         t2l_clip_extractor = ClipExtractor(clip_cfg)
-        # grad_scales = [10000/5, 5000, 0, 1000, 1000]  # 1< - means higher fidelity
 
         clip_custom_t_list = sample_t_list  # [77,66,52]
-        guidance_sub_iters = [0]  # indicates which scales use CLIP guidance
+        guidance_sub_iters = [0]
         for i in range(n_scales-1):
             guidance_sub_iters.append(1)  # number of gradient steps per diffusion step for each scale
         strength = args.strength
@@ -217,7 +216,7 @@ def main():
         guidance_sub_iters.append(1)
 
         strength = 0.3
-        quantile = 0.0 # change whole image
+        quantile = 0.0 # change the whole image
         llambda = 0.05
         stop_guidance = 4  # in the last scale, stop the guidance in the last steps in order to avoid artifacts of the clip's gradients
         if mode == 'clip_style_gen':
@@ -307,8 +306,7 @@ def main():
 
 
         image_path = os.path.join(dataset_folder, image_name)
-        ScaleTrainer.roi_guided_sampling(target_image_path=image_path,
-                                         custom_t_list=sample_t_list,
+        ScaleTrainer.roi_guided_sampling(custom_t_list=sample_t_list,
                                          target_roi=target_roi,
                                          roi_bb_list=roi_bb_list,
                                          save_unbatched=True,

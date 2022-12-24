@@ -46,7 +46,9 @@ If you use this code for your research, please cite our paper:
 * [Sources](#Sources)
 
 
-## Requirements
+## Requirements 
+
+** coming soon **
 
 ```
 python -m pip install -r requirements.txt
@@ -68,7 +70,7 @@ This code was tested with python 3.8 and torch 1.13.
 **Note: This is an early code release which provides full functionality, but is not yet fully organized or optimized. We will be extensively updating this repository in the coming weeks.** 
 
 ###  Train
-To train a SinDDM model on your own image e.g. <training_image.png>, put the desired training image under ./datasets/<training_image>/, and run
+To train a SinDDM model on your own image e.g. `<training_image.png>`, put the desired training image under `./datasets/<training_image>/`, and run
 
 ```
 python main.py --scope <training_image> --mode train --dataset_folder ./datasets/<training_image>/ --image_name <training_image.png> --results_folder ./results/ 
@@ -93,7 +95,7 @@ python main.py --scope <training_image> --mode sample --dataset_folder ./dataset
 
 ###  Text guided content generation
 
-To guide the generation to create new content using a given text prompt <text_prompt>, run 
+To guide the generation to create new content using a given text prompt `<text_prompt>`, run 
 
 ```
 python main.py --scope <training_image> --mode clip_content --clip_text <text_prompt> --strength <s> --fill_factor <f> --dataset_folder ./datasets/<training_image>/ --image_name <training_image.png> --results_folder ./results/ --load_milestone 12
@@ -102,7 +104,7 @@ Where **_strength_** and **_fill_factor_** are the required controllable paramet
 
 ###  Text guided style generation
 
-To guide the generation to create a new style for the image using a given text prompt <style_prompt>, run
+To guide the generation to create a new style for the image using a given text prompt `<style_prompt>`, run
 
 ```
 python main.py --scope <training_image> --mode clip_style_gen --clip_text <style_prompt> --dataset_folder ./datasets/<training_image>/ --image_name <training_image.png> --results_folder ./results/ --load_milestone 12
@@ -118,7 +120,7 @@ python main.py --scope <training_image> --mode clip_style_trans --clip_text <tex
 ```
 
 ###  Text guided ROI
-To modify an image in a specified ROI (Region Of Interest) with a given text prompt <text_prompt>, run
+To modify an image in a specified ROI (Region Of Interest) with a given text prompt `<text_prompt>`, run
 
 ```
 python main.py --scope <training_image> --mode clip_roi --clip_text <text_prompt> --strength <s> --fill_factor <f> --dataset_folder ./datasets/<training_image>/ --image_name <training_image.png> --results_folder ./results/ --load_milestone 12
@@ -136,7 +138,7 @@ Here as well, one can generate an image with arbitrary shapes using ```--scale_m
 
 ###  Harmonization
 
-To harmonize a pasted object into an image, place a naively pasted reference image and the selected mask into ./datasets/<training_image>/i2i/ and run
+To harmonize a pasted object into an image, place a naively pasted reference image and the selected mask into `./datasets/<training_image>/i2i/` and run
 
 ```
 python main.py --scope <training_image> --mode harmonization --harm_mask <mask_name> --input_image <naively_pasted_image> --dataset_folder ./datasets/<training_image>/ --image_name <training_image.png> --results_folder ./results/ --load_milestone 12
@@ -144,20 +146,20 @@ python main.py --scope <training_image> --mode harmonization --harm_mask <mask_n
 
 ###  Style Transfer
 
-To transfer the style of the training image to a content image, place the content image into ./datasets/<training_image>/i2i/ and run
+To transfer the style of the training image to a content image, place the content image into `./datasets/<training_image>/i2i/` and run
 
 ```
 python main.py --scope <training_image> --mode style_transfer --input_image <content_image> --dataset_folder ./datasets/<training_image>/ --image_name <training_image.png> --results_folder ./results/ --load_milestone 12
 ```
 
 ## Data and Pretrained Models
-We provide several pre-trained models for you to use under `/results/` directory. More models will be available soon.
+We provide several pre-trained models for you to use under `./results/` directory. More models will be available soon.
  
-We provide all the training images we used in our paper under the `/datasets/` directory. All the images we provide are in the dimensions we used for training and are in .png format. 
+We provide all the training images we used in our paper under the `./datasets/` directory. All the images we provide are in the dimensions we used for training and are in .png format. 
  
 ## Sources 
 
 The DDPM code was adapted from the following [pytorch implementation of DDPM](https://github.com/lucidrains/denoising-diffusion-pytorch). 
 
-The modified CLIP model as well as most of the code in `/text2live_util/` directory was taken from the [official Text2live repository](https://github.com/omerbt/Text2LIVE). 
+The modified CLIP model as well as most of the code in `./text2live_util/` directory was taken from the [official Text2live repository](https://github.com/omerbt/Text2LIVE). 
  

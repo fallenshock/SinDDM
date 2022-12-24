@@ -871,7 +871,6 @@ class MultiscaleTrainer(object):
             avg_window=100,
             sched_milestones=None,
             results_folder='./results',
-            args=None,
             device=None
     ):
         super().__init__()
@@ -949,7 +948,6 @@ class MultiscaleTrainer(object):
                                                                     opt_level='O1')
 
         self.reset_parameters()
-        self.args = args
 
     def reset_parameters(self):
         self.ema_model.load_state_dict(self.model.state_dict())
@@ -1026,7 +1024,7 @@ class MultiscaleTrainer(object):
         print('training completed')
 
     def sample_scales(self, scale_mul=None, batch_size=16, custom_sample=False, custom_image_size_idxs=None,
-                      custom_scales=None, image_name='', start_noise= False, custom_t_list=None, desc=None, save_unbatched=True):
+                      custom_scales=None, image_name='', start_noise= True, custom_t_list=None, desc=None, save_unbatched=True):
         if desc is None:
             desc = f'sample_{str(datetime.datetime.now()).replace(":", "_")}'
         if self.ema_model.reblurring:
@@ -1034,7 +1032,7 @@ class MultiscaleTrainer(object):
         if self.ema_model.sample_limited_t:
             desc = desc + '_t_lmtd'
         if custom_t_list is None:
-            custom_t_list = self.ema_model.num_timesteps_trained[1:]
+            custom_t_list = self.ema_model.num_timesteps_ideal[1:]
         if custom_scales is None:
             custom_scales = [*range(self.n_scales)]  # [0, 1, 2, 3, 4, 5, 6]
             n_scales = self.n_scales
@@ -1091,20 +1089,23 @@ class MultiscaleTrainer(object):
         orig_image = self.data_list[self.n_scales-1][0][0][None,:,:,:]
         input_path = os.path.join(input_folder, input_file)
         input_img = Image.open(input_path).convert("RGB")
-        if mode == 'harmonization':
-            mask_path = os.path.join(input_folder, mask)
-            mask_img = Image.open(mask_path).convert("RGB")
-            mask_img = transforms.ToTensor()(mask_img)
-            mask_img = dilate_mask(mask_img, mode=mode)
-            mask_img = torch.from_numpy(mask_img).to(self.device)
-        else:
-            mask_img = 1
-        image_size = (input_img.size)
+
+        image_size = input_img.size
         if auto_scale is not None:
             scaler = np.sqrt((image_size[0] * image_size[1]) / auto_scale)
             if scaler > 1:
                 image_size = (int(image_size[0] / scaler), int(image_size[1] / scaler))
                 input_img = input_img.resize(image_size, Image.LANCZOS)
+
+        if mode == 'harmonization':
+            mask_path = os.path.join(input_folder, mask)
+            mask_img = Image.open(mask_path).convert("RGB")
+            mask_img = mask_img.resize(image_size, Image.LANCZOS)
+            mask_img = transforms.ToTensor()(mask_img)
+            mask_img = dilate_mask(mask_img, mode=mode)
+            mask_img = torch.from_numpy(mask_img).to(self.device)
+        else:
+            mask_img = 1
 
         if use_hist:
             image_name = image_name.rsplit(".", 1)[0] + '.png'
@@ -1121,7 +1122,7 @@ class MultiscaleTrainer(object):
         final_results_folder.mkdir(parents=True, exist_ok=True)
         final_img   =   None
         t_string = '_'.join(str(e) for e in custom_t)
-
+        time = str(datetime.datetime.now()).replace(":", "_")
         for i in range(self.n_scales-start_s):
             s = i + start_s
             ds_factor = self.scale_step ** (self.n_scales - s - 1)
@@ -1149,9 +1150,9 @@ class MultiscaleTrainer(object):
                 input_img_batch_denorm.clamp_(0.0, 1.0)
                 final_img = mask_img * final_img + (1 - mask_img) * input_img_batch_denorm
 
-            utils.save_image(final_img, str(final_results_folder / f'{input_file_name}_i2i_s_{start_s+i}_t_{t_string}_hist_{"on" if use_hist else "off"}.png'), nrow=4)
+            utils.save_image(final_img, str(final_results_folder / f'{input_file_name}_i2i_s_{start_s+i}_t_{t_string}_hist_{"on" if use_hist else "off"}_{time}.png'), nrow=4)
         if save_unbatched:
-            final_results_folder = Path(str(self.results_folders[0] / f'unbatched_i2i_s{start_s}_t_{t_string}_{str(datetime.datetime.now()).replace(":", "_")}'))
+            final_results_folder = Path(str(self.results_folders[0] / f'unbatched_i2i_s{start_s}_t_{t_string}_{time}'))
             final_results_folder.mkdir(parents=True, exist_ok=True)
             for b in range(batch_size):
                 utils.save_image(final_img[b], os.path.join(final_results_folder ,input_file + f'_out_b{b}_i2i.png'))

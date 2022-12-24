@@ -75,20 +75,19 @@ def main():
     sched_milestones = [val * 1000 for val in args.sched_k_milestones]
     load_milestone = args.load_milestone
     results_folder = args.results_folder + '/' + args.scope
-    image_size = None
+
 
     # set true to save all intermediate diffusion timestep results
     save_interm = False
 
-    sizes, rescale_losses, recon_images, scale_step, n_scales = create_img_scales(dataset_folder, image_name,
-                                                                                  scale_step=scale_step,
-                                                                                  image_size=image_size,
+    sizes, rescale_losses, recon_images, scale_step, n_scales = create_img_scales(args.dataset_folder, args.image_name,
+                                                                                  scale_step=args.scale_step,
                                                                                   create=True,
-                                                                                  auto_scale=50000,
+                                                                                  auto_scale=50000, # limit max number of pixels in image
                                                                                   )
 
     model = SinDDMNet(
-        dim=dim,
+        dim=args.dim,
         multiscale=True,
         device=device
     )
@@ -109,10 +108,10 @@ def main():
         image_sizes=sizes,
         scale_mul=scale_mul,
         channels=3,
-        timesteps=timesteps,
+        timesteps=args.timesteps,
         train_full_t=True,
         scale_losses=rescale_losses,
-        loss_factor=loss_factor,
+        loss_factor=args.loss_factor,
         loss_type='l1',
         betas=None,
         device=device,
@@ -129,51 +128,47 @@ def main():
 
     ScaleTrainer = MultiscaleTrainer(
             ms_diffusion,
-            folder=dataset_folder,
+            folder=args.dataset_folder,
             n_scales=n_scales,
             scale_step=scale_step,
             image_sizes=sizes,
-            train_batch_size=train_batch_size,
-            train_lr=train_lr,  # 2e-5,
-            train_num_steps=train_num_steps,  # total training steps
-            gradient_accumulate_every=grad_accumulate,  # gradient accumulation steps
+            train_batch_size=args.train_batch_size,
+            train_lr=args.train_lr,  # 2e-5,
+            train_num_steps=args.train_num_steps,  # total training steps
+            gradient_accumulate_every=args.grad_accumulate,  # gradient accumulation steps
             ema_decay=0.995,  # exponential moving average decay
             fp16=False,  # turn on mixed precision training with apex
-            save_and_sample_every=save_and_sample_every,
-            avg_window=avg_window,
+            save_and_sample_every=args.save_and_sample_every,
+            avg_window=args.avg_window,
             sched_milestones=sched_milestones,
             results_folder=results_folder,
-            args=args,
             device=device,
 
         )
 
-    if load_milestone > 0:
-        ScaleTrainer.load(milestone=load_milestone)
-    if mode == 'train':
+    if args.load_milestone > 0:
+        ScaleTrainer.load(milestone=args.load_milestone)
+    if args.mode == 'train':
         ScaleTrainer.train()
         start_noise = True
-        # # Sample
+        # Sample after training is complete
         ScaleTrainer.sample_scales(scale_mul=(1, 1),    # H,W
                                    custom_sample=True,
-                                   image_name=image_name,
-                                   batch_size=sample_batch_size,
-                                   start_noise=start_noise,
-                                       custom_t_list=sample_t_list
+                                   image_name=args.image_name,
+                                   batch_size=args.sample_batch_size,
+                                   custom_t_list=sample_t_list
                                    )
-    elif mode == 'sample':
+    elif args.mode == 'sample':
 
-        start_noise = True
         # # Sample
         ScaleTrainer.sample_scales(scale_mul=scale_mul,    # H,W
                                    custom_sample=True,
-                                   image_name=image_name,
-                                   batch_size=sample_batch_size,
-                                   start_noise=start_noise,
+                                   image_name=args.image_name,
+                                   batch_size=args.sample_batch_size,
                                    custom_t_list=sample_t_list,
                                    save_unbatched=True
                                    )
-    elif mode == 'clip_content':
+    elif args.mode == 'clip_content':
         # CLIP
         text_input = args.clip_text
         clip_cfg = {"clip_model_name": "ViT-B/32",
@@ -193,7 +188,7 @@ def main():
         ScaleTrainer.clip_sampling(clip_model=t2l_clip_extractor,
                                    text_input=text_input,
                                    strength=strength,
-                                   sample_batch_size=sample_batch_size,
+                                   sample_batch_size=args.sample_batch_size,
                                    custom_t_list=clip_custom_t_list,
                                    quantile=quantile,
                                    guidance_sub_iters=guidance_sub_iters,
@@ -202,7 +197,7 @@ def main():
                                    scale_mul=scale_mul,
                                    llambda=llambda
                                    )
-    elif mode == 'clip_style_trans' or mode == 'clip_style_gen':
+    elif args.mode == 'clip_style_trans' or args.mode == 'clip_style_gen':
         # CLIP
         text_input = args.clip_text + ' Style'
         clip_cfg = {"clip_model_name": "ViT-B/32",
@@ -219,16 +214,16 @@ def main():
         quantile = 0.0 # change the whole image
         llambda = 0.05
         stop_guidance = 4  # in the last scale, stop the guidance in the last steps in order to avoid artifacts of the clip's gradients
-        if mode == 'clip_style_gen':
+        if args.mode == 'clip_style_gen':
             start_noise = True
         else:  # mode == 'clip_style_trans':
             start_noise = False  # set false to start from original image at last scale
-        image_name = image_name.rsplit( ".", 1 )[ 0 ] + '.png'
+        image_name = args.image_name.rsplit( ".", 1 )[ 0 ] + '.png'
         ScaleTrainer.ema_model.reblurring = False
         ScaleTrainer.clip_sampling(clip_model=t2l_clip_extractor,
                                    text_input=text_input,
                                    strength=strength,
-                                   sample_batch_size=sample_batch_size,
+                                   sample_batch_size=args.sample_batch_size,
                                    custom_t_list=clip_custom_t_list,
                                    quantile=quantile,
                                    guidance_sub_iters=guidance_sub_iters,
@@ -240,7 +235,7 @@ def main():
                                    image_name=image_name,
                                    )
 
-    elif mode == 'clip_roi':
+    elif args.mode == 'clip_roi':
         # CLIP_ROI
         text_input = args.clip_text
         clip_cfg = {"clip_model_name": "ViT-B/32",
@@ -252,8 +247,8 @@ def main():
         num_clip_iters = 100
         num_denoising_steps = 3
         # select from the finest scale
-        dataset_folder = os.path.join(dataset_folder, f'scale_{n_scales - 1}/')
-        image_name = image_name.rsplit(".", 1)[0] + '.png'
+        dataset_folder = os.path.join(args.dataset_folder, f'scale_{n_scales - 1}/')
+        image_name = args.image_name.rsplit(".", 1)[0] + '.png'
         import cv2
         image_to_select = cv2.imread(dataset_folder+image_name)
         roi = cv2.selectROI(image_to_select)
@@ -264,7 +259,7 @@ def main():
         ScaleTrainer.clip_roi_sampling(clip_model=t2l_clip_extractor,
                                        text_input=text_input,
                                        strength=strength,
-                                       sample_batch_size=sample_batch_size,
+                                       sample_batch_size=args.sample_batch_size,
                                        custom_t_list=clip_custom_t_list,
                                        num_clip_iters=num_clip_iters,
                                        num_denoising_steps=num_denoising_steps,
@@ -273,10 +268,10 @@ def main():
                                        full_grad=full_grad,
                                        )
 
-    elif mode == 'roi':
+    elif args.mode == 'roi':
 
         import cv2
-        image_path = os.path.join(dataset_folder, f'scale_{n_scales - 1}', image_name.rsplit(".", 1)[0] + '.png')
+        image_path = os.path.join(args.dataset_folder, f'scale_{n_scales - 1}', args.image_name.rsplit(".", 1)[0] + '.png')
         image_to_select = cv2.imread(image_path)
         roi = cv2.selectROI(image_to_select)
         image_to_select = cv2.cvtColor(image_to_select, cv2.COLOR_BGR2RGB)
@@ -305,7 +300,7 @@ def main():
         torchvision.utils.save_image(empty_image, os.path.join(args.results_folder, args.scope, f'roi_patches.png'))
 
 
-        image_path = os.path.join(dataset_folder, image_name)
+        # image_path = os.path.join(args.dataset_folder, args.image_name)
         ScaleTrainer.roi_guided_sampling(custom_t_list=sample_t_list,
                                          target_roi=target_roi,
                                          roi_bb_list=roi_bb_list,
@@ -313,26 +308,26 @@ def main():
                                          batch_size=args.sample_batch_size,
                                          scale_mul=scale_mul)
 
-    elif mode == 'style_transfer' or mode == 'harmonization':
+    elif args.mode == 'style_transfer' or args.mode == 'harmonization':
 
-        i2i_folder = os.path.join(dataset_folder, 'i2i')
+        i2i_folder = os.path.join(args.dataset_folder, 'i2i')
         i2i_file = args.input_image
         mask = args.harm_mask  # 'seascape_mask_dragon.png'
 
 
         # Set true for histogram matching
-        if mode == 'style_transfer':
+        if args.mode == 'style_transfer':
             # start diffusion from last scale
             start_s = n_scales - 1
-            # start diffusion from t=5
+            # start diffusion from t=5 - increase for stronger prior on the original image
             start_t = 5
             custom_t = []
             use_hist = True
         else:
             # start diffusion from last scale
             start_s = n_scales - 1
-            # start diffusion from t=10
-            start_t = 10
+            # start diffusion from t=10 - increase for stronger prior on the original image
+            start_t = 5
             custom_t = []
             use_hist = False
 
@@ -340,13 +335,13 @@ def main():
             custom_t.append(0)
         custom_t.append(start_t)
         # use histogram of original image for histogram matching
-        hist_ref_path = f'{dataset_folder}scale_{start_s}/'
+        hist_ref_path = f'{args.dataset_folder}scale_{start_s}/'
 
-        ScaleTrainer.ema_model.reblurring = False
+        ScaleTrainer.ema_model.reblurring = True
         ScaleTrainer.image2image(input_folder=i2i_folder, input_file=i2i_file, mask=mask, hist_ref_path=hist_ref_path,
                                  batch_size=args.sample_batch_size,
-                                 image_name=image_name, start_s=start_s, custom_t=custom_t, scale_mul=(1, 1),
-                                 device=device, use_hist=use_hist, save_unbatched=True, auto_scale=50000, mode=mode)
+                                 image_name=args.image_name, start_s=start_s, custom_t=custom_t, scale_mul=(1, 1),
+                                 device=device, use_hist=use_hist, save_unbatched=True, auto_scale=50000, mode=args.mode)
     else:
         raise NotImplementedError()
 

@@ -69,7 +69,7 @@ To generate random samples, please first train a SinDDM model on the desired ima
 ```
 python main.py --scope <training_image> --mode sample --dataset_folder ./datasets/<training_image>/ --image_name <training_image.png> --results_folder ./results/ --load_milestone 12
 ```
-To sample images in arbitrary sizes, one can add ```--scale_mul <y> <x>``` argument to generate an image that is <y> times as high and <x> times as wide as the original image.
+To sample images in arbitrary sizes, one can add ```--scale_mul <y> <x>``` argument to generate an image that is `<y>` times as high and `<x>` times as wide as the original image.
  
 <!-- ###  Random samples of arbitrary sizes 
 To generate random samples of arbitrary sizes, use the '--scale_mul h w' argument.
@@ -118,7 +118,7 @@ Here, the user can mark a specific training image ROI and choose where it should
 ```
 python main.py --scope <training_image> --mode roi --dataset_folder ./datasets/<training_image>/ --image_name <training_image.png> --results_folder ./results/ --load_milestone 12
 ```
-A graphical prompt will open and allow the user to choose a ROI from the training image. Then, the user need to choode where it should appear in the resulting samples.
+A graphical prompt will open and allow the user to choose a ROI from the training image. Then, the user need to choose where it should appear in the resulting samples.
 Here as well, one can generate an image with arbitrary shapes using ```--scale_mul <y> <x>```
 
 ###  Harmonization

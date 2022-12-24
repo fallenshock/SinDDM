@@ -45,7 +45,8 @@ If you use this code for your research, please cite our paper:
 * [Data and Pretrained Models](#Data-and-Pretrained-Models)
 * [Sources](#Sources)
 
-### Requirements
+
+## Requirements
 
 ```
 python -m pip install -r requirements.txt

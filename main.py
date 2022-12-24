@@ -11,7 +11,7 @@ from text2live_util.clip_extractor import ClipExtractor
 def main():
 
     parser = argparse.ArgumentParser()
-    # Dataset
+
     parser.add_argument("--scope", help='choose training scope.', default='forest_0026')
     parser.add_argument("--mode", help='choose mode: train, sample, clip_content, clip_style_gen, clip_style_trans, clip_roi, harmonization, style_transfer, roi')
     # relevant if mode==hamonization/style_transfer
@@ -23,6 +23,8 @@ def main():
     # # relevant if mode==clip_content
     parser.add_argument("--fill_factor", help='Dictates relative amount of pixels to be changed.', type=float)
     parser.add_argument("--strength", help='Dictates the relative strength of CLIPs gradients.',  type=float)
+    parser.add_argument("--roi_n_tar", help='Defines the number of target ROIs in the new image.', default=1, type=int)
+    # Dataset
     parser.add_argument("--dataset_folder", help='choose dataset folder.', default='./datasets/forest/')
     parser.add_argument("--image_name", help='choose image name.', default='forest.jpeg')
     parser.add_argument("--results_folder", help='choose results folder.', default='./results/')
@@ -266,7 +268,7 @@ def main():
         target_roi = [roi[i] for i in roi_perm]
         tar_y, tar_x, tar_h, tar_w = target_roi
         roi_bb_list = []
-        n_targets = 2  # number of target patches
+        n_targets = args.roi_n_tar  # number of target patches
         target_h = int(image_to_select.shape[0] * scale_mul[0])
         target_w = int(image_to_select.shape[1] * scale_mul[1])
         empty_image = np.ones((target_h, target_w, 3))
@@ -286,8 +288,6 @@ def main():
         empty_image = torchvision.transforms.ToTensor()(empty_image)
         torchvision.utils.save_image(empty_image, os.path.join(args.results_folder, args.scope, f'roi_patches.png'))
 
-
-        # image_path = os.path.join(args.dataset_folder, args.image_name)
         ScaleTrainer.roi_guided_sampling(custom_t_list=sample_t_list,
                                          target_roi=target_roi,
                                          roi_bb_list=roi_bb_list,
@@ -301,8 +301,6 @@ def main():
         i2i_file = args.input_image
         mask = args.harm_mask  # 'seascape_mask_dragon.png'
 
-
-        # Set true for histogram matching
         if args.mode == 'style_transfer':
             # start diffusion from last scale
             start_s = n_scales - 1

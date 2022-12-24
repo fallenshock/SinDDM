@@ -89,7 +89,7 @@ To guide the generation to create new content using a given text prompt <text_pr
 ```
 python main.py --scope <training_image> --mode clip_content --clip_text <text_prompt> --strength <s> --fill_factor <f> --dataset_folder ./datasets/<training_image>/ --image_name <training_image.png> --results_folder ./results/ --load_milestone 12
 ```
-Where **_strength_** and **_fill_factor_** are controllable parameters explained in the paper.
+Where **_strength_** and **_fill_factor_** are the required controllable parameters explained in the paper.
 
 ###  Text guided style generation
 
@@ -118,9 +118,9 @@ python main.py --scope <training_image> --mode clip_roi --clip_text <text_prompt
 
 ###  ROI guided generation
 
-Here, the user can mark a specific training image ROI and choose where it should appear in the generated samples.
+Here, the user can mark a specific training image ROI and choose where it should appear in the generated samples. If roi_n_tar is passed then the user will be able to choose several target locations.
 ```
-python main.py --scope <training_image> --mode roi --dataset_folder ./datasets/<training_image>/ --image_name <training_image.png> --results_folder ./results/ --load_milestone 12
+python main.py --scope <training_image> --mode roi --roi_n_tar <n_targets> --dataset_folder ./datasets/<training_image>/ --image_name <training_image.png> --results_folder ./results/ --load_milestone 12
 ```
 A graphical prompt will open and allow the user to choose a ROI from the training image. Then, the user need to choose where it should appear in the resulting samples.
 Here as well, one can generate an image with arbitrary shapes using ```--scale_mul <y> <x>```

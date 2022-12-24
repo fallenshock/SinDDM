@@ -63,7 +63,6 @@ class Dataset(data.Dataset):
         return self.transform(img)
 
 
-
 class MultiscaleTrainer(object):
 
     def __init__(
@@ -297,7 +296,6 @@ class MultiscaleTrainer(object):
             for b in range(batch_size):
                 utils.save_image(final_img[b], str(final_results_folder / res_sub_folder) + f'_out_b{b}.png')
 
-
     def image2image(self, input_folder='', input_file='', mask='', hist_ref_path='', image_name='', start_s=1, custom_t=None, batch_size=16, scale_mul=(1, 1), device=None, use_hist=False, save_unbatched=True, auto_scale=None, mode=None):
         if custom_t is None:
             custom_t = [0, 0, 0, 0, 0, 0, 0] # 0 - use default sampling t
@@ -371,7 +369,6 @@ class MultiscaleTrainer(object):
             final_results_folder.mkdir(parents=True, exist_ok=True)
             for b in range(batch_size):
                 utils.save_image(final_img[b], os.path.join(final_results_folder ,input_file + f'_out_b{b}_i2i.png'))
-
 
     def clip_sampling(self, clip_model, text_input, strength, sample_batch_size, custom_t_list=None,
                       guidance_sub_iters=None, quantile=0.8, stop_guidance=None, save_unbatched=False, scale_mul=(1,1), llambda=0, start_noise=True, image_name=''):

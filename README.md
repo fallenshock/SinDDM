@@ -158,5 +158,5 @@ We provide all the training images we used in our paper under the `/datasets/` d
 
 The DDPM code was adapted from the following [pytorch implementation of DDPM](https://github.com/lucidrains/denoising-diffusion-pytorch). 
 
-The modified CLIP model as well as most of the code in `/text2live_util/` directory was taken from the official [Text2live repository](https://github.com/omerbt/Text2LIVE). 
+The modified CLIP model as well as most of the code in `/text2live_util/` directory was taken from the [official Text2live repository](https://github.com/omerbt/Text2LIVE). 
  

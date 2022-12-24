@@ -9,13 +9,13 @@
 ### Official pytorch implementation of the paper: "SinDDM: A Single Image Denoising Diffusion Model"
 
 
-## Random samples from a single example
+## Random Samples from a Single Example
 With SinDDM, one can train a generative model from a single natural image, and then generate random samples from the given image, for example:
 
 ![](imgs/gen_examples.png)
 
 
-## SinDDM's applications
+## SinDDM's Applications
 SinDDM can also be used for a line of image manipulation tasks, especially image manipluations guided by text, for example:
  ![](imgs/text_guidance.png)
 
@@ -36,27 +36,35 @@ If you use this code for your research, please cite our paper:
 ```
 
 ## Table of Contents
-* [Random samples from a single example](#Random-samples-from-a-single-example)
-* [SinDDM's applications](#SinDDMs-applications)
-* [Citation](#citation)
-* [Code and Usage Examples](#Code-and-Usage-Examples)
+* [Random Samples from a Single Example](#Random-Samples-from-a-Single-Example)
+* [SinDDM's Applications](#SinDDMs-Applications)
+* [Citation](#Citation)
+* [Requirements](#Requirements)
+* [Repository Structure](#Repository-Structure)
+* [Usage Examples](#Usage-Examples)
 * [Data and Pretrained Models](#Data-and-Pretrained-Models)
+* [Sources](#Sources)
 
-## Code and Usage Examples 
-**Note: This is an early code release which provides full functionality, but is not yet fully organized or optimized. We will be extensively updating this repository in the coming weeks.** 
-### Install dependencies (coming soon)
+### Requirements
 
 ```
 python -m pip install -r requirements.txt
 ```
-### Original codebase:
-https://github.com/lucidrains/denoising-diffusion-pytorch
-
-And the modified CLIP model was taken from:
-
-https://github.com/omerbt/Text2LIVE
-
 This code was tested with python 3.8 and torch 1.13. 
+
+## Repository Structure 
+```
+├── SinDDM - training and inference code   
+├── clip - clip model code
+├── datasets - the images used in the paper
+├── imgs - images used in this repository readme.md file
+├── results - pre-trained models 
+├── text2live_util - code for editing via text, based on text2live code 
+└── main.py - main python file for initiate model training and for model inference 
+```
+
+## Usage Examples 
+**Note: This is an early code release which provides full functionality, but is not yet fully organized or optimized. We will be extensively updating this repository in the coming weeks.** 
 
 ###  Train
 To train a SinDDM model on your own image e.g. <training_image.png>, put the desired training image under ./datasets/<training_image>/, and run
@@ -142,9 +150,13 @@ python main.py --scope <training_image> --mode style_transfer --input_image <con
 ```
 
 ## Data and Pretrained Models
-We provide several pre-trained models for you to use under /results/ folder. More models will be available soon.
+We provide several pre-trained models for you to use under `/results/` directory. More models will be available soon.
  
-*We provide all the training images we used in our paper. All the images we provide are in the dimensions we used for training and are in .png format. (coming soon).* 
+We provide all the training images we used in our paper under the `/datasets/` directory. All the images we provide are in the dimensions we used for training and are in .png format. 
  
+## Sources 
 
+The DDPM code was adapted from the following [pytorch implementation of DDPM](https://github.com/lucidrains/denoising-diffusion-pytorch). 
+
+The modified CLIP model as well as most of the code in `/text2live_util/` directory was taken from the official [Text2live repository](https://github.com/omerbt/Text2LIVE). 
  

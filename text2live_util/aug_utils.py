@@ -1,3 +1,8 @@
+"""
+This code was originally taken from
+https://github.com/omerbt/Text2LIVE
+"""
+
 import warnings
 from collections.abc import Sequence
 import numbers

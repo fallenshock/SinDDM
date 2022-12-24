@@ -3,10 +3,10 @@ import numpy as np
 import argparse
 import os
 import torchvision
-from denoising_diffusion_pytorch import SinDDMNet, create_img_scales, MultiscaleTrainer, MultiScaleGaussianDiffusion
+from SinDDM.functions import create_img_scales
+from SinDDM.models import SinDDMNet, MultiScaleGaussianDiffusion
+from SinDDM.trainer import MultiscaleTrainer
 from text2live_util.clip_extractor import ClipExtractor
-
-# from torchinfo import summary
 
 def main():
 
@@ -21,8 +21,8 @@ def main():
     # relevant if mode==clip_{content/style_gen/style_trans/roi}
     parser.add_argument("--clip_text", help='enter CLIP text.', default='Fire in the Forest')
     # # relevant if mode==clip_content
-    parser.add_argument("--fill_factor", help='Dictates relative amount of pixels to be changed.', default=0.5, type=float)
-    parser.add_argument("--strength", help='Dictates the relative strength of CLIPs gradients', default=0.5, type=float)
+    parser.add_argument("--fill_factor", help='Dictates relative amount of pixels to be changed.', type=float)
+    parser.add_argument("--strength", help='Dictates the relative strength of CLIPs gradients.',  type=float)
     parser.add_argument("--dataset_folder", help='choose dataset folder.', default='./datasets/forest/')
     parser.add_argument("--image_name", help='choose image name.', default='forest.jpeg')
     parser.add_argument("--results_folder", help='choose results folder.', default='./results/')
@@ -57,27 +57,11 @@ def main():
 
     print('num devices: '+ str(torch.cuda.device_count()))
     device = f"cuda:{args.device_num}"
-    mode = args.mode
-    dataset_folder = args.dataset_folder
-    image_name = args.image_name
-    dim = args.dim
-    scale_step = args.scale_step
-    loss_factor = args.loss_factor
-    timesteps = args.timesteps
     scale_mul = (args.scale_mul[0], args.scale_mul[1])
-    sample_batch_size = args.sample_batch_size
-    train_batch_size = args.train_batch_size
-    grad_accumulate = args.grad_accumulate
-    train_num_steps = args.train_num_steps
-    save_and_sample_every = args.save_and_sample_every
-    avg_window = args.avg_window
-    train_lr = args.train_lr
     sched_milestones = [val * 1000 for val in args.sched_k_milestones]
-    load_milestone = args.load_milestone
     results_folder = args.results_folder + '/' + args.scope
 
-
-    # set true to save all intermediate diffusion timestep results
+    # set to true to save all intermediate diffusion timestep results
     save_interm = False
 
     sizes, rescale_losses, recon_images, scale_step, n_scales = create_img_scales(args.dataset_folder, args.image_name,
@@ -122,9 +106,9 @@ def main():
     ).to(device)
 
     if args.sample_t_list is None:
-        sample_t_list = ms_diffusion.num_timesteps_ideal[1:]  # excluding scale 0 [8,9,10]
+        sample_t_list = ms_diffusion.num_timesteps_ideal[1:]
     else:
-        sample_t_list = args.sample_t_list  # excluding scale 0
+        sample_t_list = args.sample_t_list
 
     ScaleTrainer = MultiscaleTrainer(
             ms_diffusion,
@@ -133,7 +117,7 @@ def main():
             scale_step=scale_step,
             image_sizes=sizes,
             train_batch_size=args.train_batch_size,
-            train_lr=args.train_lr,  # 2e-5,
+            train_lr=args.train_lr,
             train_num_steps=args.train_num_steps,  # total training steps
             gradient_accumulate_every=args.grad_accumulate,  # gradient accumulation steps
             ema_decay=0.995,  # exponential moving average decay
@@ -150,7 +134,6 @@ def main():
         ScaleTrainer.load(milestone=args.load_milestone)
     if args.mode == 'train':
         ScaleTrainer.train()
-        start_noise = True
         # Sample after training is complete
         ScaleTrainer.sample_scales(scale_mul=(1, 1),    # H,W
                                    custom_sample=True,
@@ -168,6 +151,7 @@ def main():
                                    custom_t_list=sample_t_list,
                                    save_unbatched=True
                                    )
+
     elif args.mode == 'clip_content':
         # CLIP
         text_input = args.clip_text
@@ -175,15 +159,16 @@ def main():
                     "clip_affine_transform_fill": True,
                     "n_aug": 16}
         t2l_clip_extractor = ClipExtractor(clip_cfg)
+        clip_custom_t_list = sample_t_list
 
-        clip_custom_t_list = sample_t_list  # [77,66,52]
+        # number of gradient steps per diffusion step for each scale
         guidance_sub_iters = [0]
         for i in range(n_scales-1):
-            guidance_sub_iters.append(1)  # number of gradient steps per diffusion step for each scale
+            guidance_sub_iters.append(1)
         strength = args.strength
         quantile = 1-args.fill_factor
         llambda = 0.2
-        stop_guidance = 3 # in the last scale, stop the guidance in the last steps in order to avoid artifacts of the clip's gradients
+        stop_guidance = 3 # at the last scale, disable the guidance in the last x steps in order to avoid artifacts from CLIP
         ScaleTrainer.ema_model.reblurring = False
         ScaleTrainer.clip_sampling(clip_model=t2l_clip_extractor,
                                    text_input=text_input,
@@ -197,6 +182,7 @@ def main():
                                    scale_mul=scale_mul,
                                    llambda=llambda
                                    )
+
     elif args.mode == 'clip_style_trans' or args.mode == 'clip_style_gen':
         # CLIP
         text_input = args.clip_text + ' Style'
@@ -204,8 +190,9 @@ def main():
                     "clip_affine_transform_fill": True,
                     "n_aug": 16}
         t2l_clip_extractor = ClipExtractor(clip_cfg)
-        clip_custom_t_list = sample_t_list  # [77,66,52]
-        guidance_sub_iters = [] # indicates which scales use CLIP guidance
+        clip_custom_t_list = sample_t_list
+
+        guidance_sub_iters = []
         for i in range(n_scales-1):
             guidance_sub_iters.append(0)
         guidance_sub_iters.append(1)

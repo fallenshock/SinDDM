@@ -1,3 +1,9 @@
+"""
+This code was originally taken from
+https://github.com/omerbt/Text2LIVE
+"""
+
+
 from pathlib import Path
 
 import numpy as np

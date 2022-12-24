@@ -52,6 +52,10 @@ python -m pip install -r requirements.txt
 ### Original codebase:
 https://github.com/lucidrains/denoising-diffusion-pytorch
 
+And the modified CLIP model was taken from:
+
+https://github.com/omerbt/Text2LIVE
+
 This code was tested with python 3.8 and torch 1.13. 
 
 ###  Train

@@ -1,3 +1,8 @@
+"""
+This code was originally taken from
+https://github.com/omerbt/Text2LIVE
+"""
+
 import torch
 from torch.nn import functional as F
 import torchvision.transforms as T

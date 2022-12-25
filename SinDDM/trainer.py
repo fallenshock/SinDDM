@@ -33,13 +33,13 @@ except:
 # dataset classes
 
 class Dataset(data.Dataset):
-    def __init__(self, folder, image_size, deblur=False, exts=['jpg', 'jpeg', 'png']):
+    def __init__(self, folder, image_size, blurry_img=False, exts=['jpg', 'jpeg', 'png']):
         super().__init__()
         self.folder = folder
         self.image_size = image_size
-        self.deblur = deblur
+        self.blurry_img = blurry_img
         self.paths = [p for ext in exts for p in Path(f'{folder}').glob(f'**/*.{ext}')]
-        if deblur:
+        if blurry_img:
             self.folder_recon = folder + '_recon/'
             self.paths_recon = [p for ext in exts for p in Path(f'{self.folder_recon}').glob(f'**/*.{ext}')]
 
@@ -55,7 +55,7 @@ class Dataset(data.Dataset):
     def __getitem__(self, index):
         path = self.paths[0]
         img = Image.open(path).convert('RGB')
-        if self.deblur:
+        if self.blurry_img:
             path_recon = self.paths_recon[0]
             img_recon = Image.open(path_recon).convert('RGB')
             return self.transform(img), self.transform(img_recon)
@@ -72,7 +72,7 @@ class MultiscaleTrainer(object):
             *,
             ema_decay=0.995,
             n_scales=None,
-            scale_step=1,
+            scale_factor=1,
             image_sizes=None,
             train_batch_size=32,
             train_lr=2e-5,
@@ -95,15 +95,6 @@ class MultiscaleTrainer(object):
             self.sched_milestones = sched_milestones
         if image_sizes is None:
             image_sizes = []
-        n_pixels = []
-        for i in range(n_scales):
-            n_pixels.append(image_sizes[i][0]*image_sizes[i][1])
-        self.n_pixels = torch.Tensor(n_pixels).to(self.device)
-        self.sqrt_n_pixels = torch.sqrt(self.n_pixels)
-        self.pix_cumsum = torch.cumsum(self.n_pixels, dim=0)
-        self.sqrt_pix_cumsum = torch.cumsum(self.sqrt_n_pixels, dim=0)
-        self.tot_pix = torch.sum(self.n_pixels).int()
-        self.tot_sqrt_pix = torch.sum(self.sqrt_n_pixels).int()
         self.model = ms_diffusion_model
         self.ema = EMA(ema_decay)
         self.ema_model = copy.deepcopy(self.model)
@@ -115,35 +106,30 @@ class MultiscaleTrainer(object):
 
         self.batch_size = train_batch_size
         self.n_scales = n_scales
-        self.scale_step = scale_step
-        self.image_sizes = ms_diffusion_model.image_sizes
+        self.scale_factor = scale_factor
         self.gradient_accumulate_every = gradient_accumulate_every
         self.train_num_steps = train_num_steps
 
         self.input_paths = []
-        self.output_paths = []
-        self.results_folders = []
         self.ds_list = []
         self.dl_list = []
         self.data_list = []
+        self.results_folder = Path(results_folder)
+        self.results_folder.mkdir(parents=True, exist_ok=True)
 
         for i in range(n_scales):
             self.input_paths.append(folder + 'scale_' + str(i))
-            self.output_paths.append(results_folder + '/scale_' + str(i))
-            deblur = True if i > 0 else False
-            self.ds_list.append(Dataset(self.input_paths[i], image_sizes[i], deblur))
+            blurry_img = True if i > 0 else False
+            self.ds_list.append(Dataset(self.input_paths[i], image_sizes[i], blurry_img))
             self.dl_list.append(
                 cycle(data.DataLoader(self.ds_list[i], batch_size=train_batch_size, shuffle=True, pin_memory=True)))
-
-            self.results_folders.append(Path(results_folder))
-            self.results_folders[i].mkdir(parents=True, exist_ok=True)
 
             if i > 0:
                 Data = next(self.dl_list[i])
                 self.data_list.append((Data[0].to(self.device), Data[1].to(self.device)))
             else:
                 self.data_list.append(
-                    (next(self.dl_list[i]).to(self.device), next(self.dl_list[i]).to(self.device)))  # just duplicate orig over deblur
+                    (next(self.dl_list[i]).to(self.device), next(self.dl_list[i]).to(self.device)))  # just duplicate orig over blurry_img for scale 0
 
         self.opt = Adam(ms_diffusion_model.parameters(), lr=train_lr)
 
@@ -181,17 +167,17 @@ class MultiscaleTrainer(object):
             'running_loss': self.running_loss,
             'running_scale': self.running_scale
         }
-        torch.save(data, str(self.results_folders[0] / f'model-{milestone}.pt'))
+        torch.save(data, str(self.results_folder / f'model-{milestone}.pt'))
         plt.rcParams['figure.figsize'] = [16, 8]
 
         plt.plot(self.running_loss)
         plt.grid(True)
         plt.ylim((0, 0.2))
-        plt.savefig(str(self.results_folders[0] / 'running_loss'))
+        plt.savefig(str(self.results_folder / 'running_loss'))
         plt.clf()
 
     def load(self, milestone):
-        data = torch.load(str(self.results_folders[0] / f'model-{milestone}.pt'), map_location=self.device)
+        data = torch.load(str(self.results_folder / f'model-{milestone}.pt'), map_location=self.device)
 
         self.step = data['step']
         self.model.load_state_dict(data['model'])
@@ -213,8 +199,8 @@ class MultiscaleTrainer(object):
                 data = self.data_list[s]
                 loss = self.model(data, s)
                 loss_avg += loss.item()
-
                 backwards(loss / self.gradient_accumulate_every, self.opt)
+
             if self.step % self.avg_window == 0:
                 print(f'step:{self.step} loss:{loss_avg/self.avg_window}')
                 self.running_loss.append(loss_avg/self.avg_window)
@@ -232,7 +218,7 @@ class MultiscaleTrainer(object):
                 all_images_list = list(map(lambda n: self.ema_model.sample(batch_size=n), batches))
                 all_images = torch.cat(all_images_list, dim=0)
                 all_images = (all_images + 1) * 0.5
-                utils.save_image(all_images, str(self.results_folders[s] / f'sample-{milestone}.png'), nrow=4)
+                utils.save_image(all_images, str(self.results_folder / f'sample-{milestone}.png'), nrow=4)
                 self.save(milestone)
 
         print('training completed')
@@ -245,18 +231,20 @@ class MultiscaleTrainer(object):
             desc = desc + '_rblr'
         if self.ema_model.sample_limited_t:
             desc = desc + '_t_lmtd'
+        # sample with custom t list
         if custom_t_list is None:
             custom_t_list = self.ema_model.num_timesteps_ideal[1:]
+        # sample with custom scale list
         if custom_scales is None:
-            custom_scales = [*range(self.n_scales)]  # [0, 1, 2, 3, 4, 5, 6]
+            custom_scales = [*range(self.n_scales)]
             n_scales = self.n_scales
         else:
             n_scales = len(custom_scales)
         if custom_image_size_idxs is None:
-            custom_image_size_idxs = [*range(self.n_scales)]  # [0, 1, 2, 3, 4, 5, 6]
+            custom_image_size_idxs = [*range(self.n_scales)]
 
         samples_from_scales = []
-        final_results_folder = Path(str(self.results_folders[0] / 'final_samples'))
+        final_results_folder = Path(str(self.results_folder / 'final_samples'))
         final_results_folder.mkdir(parents=True, exist_ok=True)
         if scale_mul is not None:
             scale_0_size = (
@@ -268,16 +256,16 @@ class MultiscaleTrainer(object):
         res_sub_folder = '_'.join(str(e) for e in t_list)
         final_img = None
         for i in range(n_scales):
-            # if (custom_image_size_idxs[i] == 0 or start_noise) and i == 0:
             if start_noise and i == 0:
                 samples_from_scales.append(
                     self.ema_model.sample(batch_size=batch_size, scale_0_size=scale_0_size, s=custom_scales[i]))
-            elif i == 0:
+
+            elif i == 0: # start_noise == False, means injecting the original training image
                 orig_sample_0 = Image.open((self.input_paths[custom_scales[i]] + '/' + image_name)).convert("RGB")
 
                 samples_from_scales.append((transforms.ToTensor()(orig_sample_0) * 2 - 1).repeat(batch_size, 1, 1, 1).to(self.device))
-            else:
 
+            else:
                 samples_from_scales.append(self.ema_model.sample_via_scale(batch_size,
                                                                            samples_from_scales[i - 1],
                                                                            s=custom_scales[i],
@@ -285,13 +273,13 @@ class MultiscaleTrainer(object):
                                                                            custom_sample=custom_sample,
                                                                            custom_img_size_idx=custom_image_size_idxs[i],
                                                                            custom_t=custom_t_list[int(custom_scales[i])-1],
-                                                                           # custom_t=custom_t_list[i-1],
                                                                            ))
             final_img = (samples_from_scales[i] + 1) * 0.5
 
             utils.save_image(final_img, str(final_results_folder / res_sub_folder) + f'_out_s{i}_{desc}_sm_{scale_mul[0]}_{scale_mul[1]}.png', nrow=4)
+
         if save_unbatched:
-            final_results_folder = Path(str(self.results_folders[0] / f'final_samples_unbatched_{desc}'))
+            final_results_folder = Path(str(self.results_folder / f'final_samples_unbatched_{desc}'))
             final_results_folder.mkdir(parents=True, exist_ok=True)
             for b in range(batch_size):
                 utils.save_image(final_img[b], str(final_results_folder / res_sub_folder) + f'_out_b{b}.png')
@@ -328,16 +316,17 @@ class MultiscaleTrainer(object):
         input_size = torch.tensor(input_img_tensor.shape[1:])
         input_img_batch = input_img_tensor.repeat(batch_size, 1, 1, 1).to(device)  # batchify and send to GPU
 
-        samples_from_scales = []
 
-        final_results_folder = Path(str(self.results_folders[0] / 'i2i_final_samples'))
+        final_results_folder = Path(str(self.results_folder / 'i2i_final_samples'))
         final_results_folder.mkdir(parents=True, exist_ok=True)
         final_img = None
         t_string = '_'.join(str(e) for e in custom_t)
         time = str(datetime.datetime.now()).replace(":", "_")
+
+        samples_from_scales = []
         for i in range(self.n_scales-start_s):
             s = i + start_s
-            ds_factor = self.scale_step ** (self.n_scales - s - 1)
+            ds_factor = self.scale_factor ** (self.n_scales - s - 1)
             cur_size = input_size/ds_factor
             cur_size = (int(cur_size[0].item()), int(cur_size[1].item()))
 
@@ -364,7 +353,7 @@ class MultiscaleTrainer(object):
 
             utils.save_image(final_img, str(final_results_folder / f'{input_file_name}_i2i_s_{start_s+i}_t_{t_string}_hist_{"on" if use_hist else "off"}_{time}.png'), nrow=4)
         if save_unbatched:
-            final_results_folder = Path(str(self.results_folders[0] / f'unbatched_i2i_s{start_s}_t_{t_string}_{time}'))
+            final_results_folder = Path(str(self.results_folder / f'unbatched_i2i_s{start_s}_t_{t_string}_{time}'))
             final_results_folder.mkdir(parents=True, exist_ok=True)
             for b in range(batch_size):
                 utils.save_image(final_img[b], os.path.join(final_results_folder ,input_file + f'_out_b{b}_i2i.png'))
@@ -390,7 +379,7 @@ class MultiscaleTrainer(object):
         desc = f"clip_{text_input.replace(' ', '_')}_n_aug{n_aug}_str_" + strength_string + "_gsi_" + gsi_string + \
                f'_ff{1-quantile}' + f'_{str(datetime.datetime.now()).replace(":", "_")}'
 
-        if not start_noise:
+        if not start_noise:  # relevant for mode==clip_style_trans
             # start from last scale
             custom_scales = [self.n_scales - 2, self.n_scales - 1]
             custom_image_size_idxs = [self.n_scales - 2, self.n_scales - 1]
@@ -406,7 +395,7 @@ class MultiscaleTrainer(object):
                                save_unbatched=save_unbatched,
                                start_noise=start_noise,
                                )
-        else:
+        else:  # relevant for mode==clip_style_gen or clip_content
             self.sample_scales(scale_mul=scale_mul,  # H,W
                                custom_sample=False,
                                image_name='',
@@ -418,8 +407,8 @@ class MultiscaleTrainer(object):
                                )
         self.ema_model.clip_guided_sampling = False
 
-    def clip_roi_sampling(self, clip_model, text_input, strength, sample_batch_size, custom_t_list=None,
-                      num_clip_iters=100, num_denoising_steps=2, clip_roi_bb=None, save_unbatched=False, full_grad=False):
+    def clip_roi_sampling(self, clip_model, text_input, strength, sample_batch_size,
+                          num_clip_iters=100, num_denoising_steps=2, clip_roi_bb=None, save_unbatched=False):
 
         text_embedds = clip_model.get_text_embedding(text_input, template=get_augmentations_template('lr'))
         strength_string = f'{strength}'
@@ -429,10 +418,7 @@ class MultiscaleTrainer(object):
         image = self.data_list[self.n_scales-1][0][0][None,:,:,:]
         image = image.repeat(sample_batch_size, 1, 1, 1)
 
-        if full_grad:
-            image_roi = image.clone()
-        else:
-            image_roi = image[:,:,clip_roi_bb[0]:clip_roi_bb[0]+clip_roi_bb[2],clip_roi_bb[1]:clip_roi_bb[1]+clip_roi_bb[3]].clone()
+        image_roi = image[:,:,clip_roi_bb[0]:clip_roi_bb[0]+clip_roi_bb[2],clip_roi_bb[1]:clip_roi_bb[1]+clip_roi_bb[3]].clone()
 
         image_roi.requires_grad_(True)
         image_roi_renorm = (image_roi + 1) * 0.5
@@ -461,10 +447,8 @@ class MultiscaleTrainer(object):
             image_roi_renorm = (image_roi + 1) * 0.5
 
         # insert patch into original image
-        if full_grad:
-            image[:, :, clip_roi_bb[0]:clip_roi_bb[0] + clip_roi_bb[2],clip_roi_bb[1]:clip_roi_bb[1] + clip_roi_bb[3]] = image_roi[:,:,clip_roi_bb[0]:clip_roi_bb[0]+clip_roi_bb[2],clip_roi_bb[1]:clip_roi_bb[1]+clip_roi_bb[3]]
-        else:
-            image[:, :, clip_roi_bb[0]:clip_roi_bb[0] + clip_roi_bb[2],clip_roi_bb[1]:clip_roi_bb[1] + clip_roi_bb[3]] = image_roi
+
+        image[:, :, clip_roi_bb[0]:clip_roi_bb[0] + clip_roi_bb[2],clip_roi_bb[1]:clip_roi_bb[1] + clip_roi_bb[3]] = image_roi
 
         final_image = self.ema_model.sample_via_scale(sample_batch_size,
                                                       image,
@@ -475,11 +459,9 @@ class MultiscaleTrainer(object):
         final_results_folder = Path(str(self.ema_model.results_folder / f'final_samples'))
         final_results_folder.mkdir(parents=True, exist_ok=True)
         utils.save_image(final_img_renorm, str(final_results_folder / (desc + '.png')), nrow=4)
-        final_results_folder = Path(str(self.results_folders[0] / f'final_samples_unbatched_{desc}'))
-        final_results_folder.mkdir(parents=True, exist_ok=True)
 
         if save_unbatched:
-            final_results_folder = Path(str(self.results_folders[0] / f'final_samples_unbatched_{desc}'))
+            final_results_folder = Path(str(self.results_folder / f'final_samples_unbatched_{desc}'))
             final_results_folder.mkdir(parents=True, exist_ok=True)
             for b in range(sample_batch_size):
                 utils.save_image(final_img_renorm[b], os.path.join(final_results_folder, f'{desc}_out_b{b}.png'))
@@ -488,9 +470,9 @@ class MultiscaleTrainer(object):
         self.ema_model.roi_guided_sampling = True
         self.ema_model.roi_bbs = roi_bb_list
         target_bb = target_roi
+        # create a corresponding downsampled patch for each scale
         for scale in range(self.n_scales):
-
-            target_bb_rescaled = [int(bb_i / np.power(self.scale_step, self.n_scales - scale - 1)) for bb_i in target_bb]
+            target_bb_rescaled = [int(bb_i / np.power(self.scale_factor, self.n_scales - scale - 1)) for bb_i in target_bb]
             self.ema_model.roi_target_patch.append(extract_patch(self.data_list[scale][0][0][None, :,:,:], target_bb_rescaled))
 
         self.sample_scales(scale_mul=scale_mul,  # H,W

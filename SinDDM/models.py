@@ -159,9 +159,8 @@ class MultiScaleGaussianDiffusion(nn.Module):
             *,
             save_interm=False,
             results_folder = '/Results',
-            recon_images=None,
             n_scales,
-            scale_step,
+            scale_factor,
             image_sizes,
             scale_mul=(1, 1),
             channels=3,
@@ -180,10 +179,9 @@ class MultiScaleGaussianDiffusion(nn.Module):
         self.device = device
         self.save_interm = save_interm
         self.results_folder = Path(results_folder)
-        self.recon_images = recon_images
         self.channels = channels
         self.n_scales = n_scales
-        self.scale_step = scale_step
+        self.scale_factor = scale_factor
         self.image_sizes = ()
         self.scale_mul = scale_mul
 
@@ -293,7 +291,7 @@ class MultiScaleGaussianDiffusion(nn.Module):
     def roi_patch_modification(self, x_recon, scale=0, eta=0.8):
         x_modified = x_recon
         for bb in self.roi_bbs:  # bounding box is of shape [y,x,h,w]
-            bb = [int(bb_i / np.power(self.scale_step, self.n_scales - scale - 1)) for bb_i in bb]
+            bb = [int(bb_i / np.power(self.scale_factor, self.n_scales - scale - 1)) for bb_i in bb]
             bb_y, bb_x, bb_h, bb_w = bb
             target_patch_resize = F.interpolate(self.roi_target_patch[scale], size=(bb_h, bb_w))
             x_modified[:, :, bb_y:bb_y + bb_h, bb_x:bb_x + bb_w] = eta * target_patch_resize + (1-eta) * x_modified[:, :, bb_y:bb_y + bb_h, bb_x:bb_x + bb_w]
@@ -311,12 +309,12 @@ class MultiScaleGaussianDiffusion(nn.Module):
             self.sqrt_recipm1_alphas_cumprod, t, x_t.shape) * noise
 
         if not self.reblurring or s == 0:
-            return x_recon_ddpm, x_recon_ddpm  # x_t_mix = x_tm1_mix
+            return x_recon_ddpm, x_recon_ddpm  # x_t_mix == x_tm1_mix at scale 0
         else:
             cur_gammas = self.gammas[s - 1].reshape(-1).clamp(0, 0.55)
             x_tm1_mix = (x_recon_ddpm - extract(cur_gammas, t, x_recon_ddpm.shape) * self.img_prev_upsample) / (
                         1 - extract(cur_gammas, t, x_recon_ddpm.shape))
-            x_t_mix = x_recon_ddpm
+            x_t_mix = x_recon_ddpm # without subtraction of the blurry part
             return x_tm1_mix, x_t_mix
 
 
@@ -435,7 +433,6 @@ class MultiScaleGaussianDiffusion(nn.Module):
             x_recon = self.roi_patch_modification(x_recon, scale=s)
 
         # else normal sampling
-
         if int(s) > 0 and t[0] > 0 and self.reblurring:
             x_tm1_mix = extract(cur_gammas, t - 1, x_recon.shape) * self.img_prev_upsample + \
                         (1 - extract(cur_gammas, t - 1, x_recon.shape)) * x_recon  # mix blurred and orig
@@ -508,6 +505,7 @@ class MultiScaleGaussianDiffusion(nn.Module):
         else:
             total_t = custom_t
         b = batch_size
+        # store upsampled image from previous scale as x^s_tilda
         self.img_prev_upsample = img
         if self.save_interm:
             final_results_folder = Path(str(self.results_folder / f'interm_samples_scale_{s}'))
@@ -529,7 +527,7 @@ class MultiScaleGaussianDiffusion(nn.Module):
         if self.clip_mask is not None:
             if s > 0:
                 mul_size = [int(self.image_sizes[s][0]* self.scale_mul[0]), int(self.image_sizes[s][1]* self.scale_mul[1])]
-                self.clip_mask = F.interpolate(self.clip_mask, size=mul_size, mode='bilinear')#.bool()
+                self.clip_mask = F.interpolate(self.clip_mask, size=mul_size, mode='bilinear')
                 self.x_recon_prev = F.interpolate(self.x_recon_prev, size=mul_size, mode='bilinear')
             else:  # mask created at scale 0 is usually too noisy
                 self.clip_mask = None
@@ -554,7 +552,7 @@ class MultiScaleGaussianDiffusion(nn.Module):
         if custom_sample:
             if custom_img_size_idx >= self.n_scales:
                 size = self.image_sizes[self.n_scales-1] # extrapolate size
-                factor = self.scale_step ** (custom_img_size_idx + 1 - self.n_scales)
+                factor = self.scale_factor ** (custom_img_size_idx + 1 - self.n_scales)
                 size = (int(size[0] * factor), int(size[1] * factor))
             else:
                 size = self.image_sizes[custom_img_size_idx]
@@ -591,7 +589,6 @@ class MultiScaleGaussianDiffusion(nn.Module):
             x_recon = self.denoise_fn(x_noisy, t, s)
 
         if self.loss_type == 'l1':
-
             loss = (noise - x_recon).abs().mean()
         elif self.loss_type == 'l2':
             loss = F.mse_loss(noise, x_recon)

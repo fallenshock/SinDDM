@@ -31,7 +31,7 @@ def main():
     # Net
     parser.add_argument("--dim", help='widest channel dimension for conv blocks.', default=160, type=int)
     # diffusion params
-    parser.add_argument("--scale_step", help='downscaling step for each scale.', default=1.411, type=float)
+    parser.add_argument("--scale_factor", help='downscaling step for each scale.', default=1.411, type=float)
     # training params
     parser.add_argument("--timesteps", help='total diffusion timesteps.', default=100, type=int)
     parser.add_argument("--train_batch_size", help='batch size during training.', default=32, type=int)
@@ -66,8 +66,8 @@ def main():
     # set to true to save all intermediate diffusion timestep results
     save_interm = False
 
-    sizes, rescale_losses, recon_images, scale_step, n_scales = create_img_scales(args.dataset_folder, args.image_name,
-                                                                                  scale_step=args.scale_step,
+    sizes, rescale_losses, scale_factor, n_scales = create_img_scales(args.dataset_folder, args.image_name,
+                                                                                  scale_factor=args.scale_factor,
                                                                                   create=True,
                                                                                   auto_scale=50000, # limit max number of pixels in image
                                                                                   )
@@ -79,18 +79,12 @@ def main():
     )
     model.to(device)
 
-    pytorch_total_params = 0
-    pytorch_total_params += sum(
-        p.numel() for p in model.parameters() if p.requires_grad)
-    print(f'total params: {pytorch_total_params}')
-
     ms_diffusion = MultiScaleGaussianDiffusion(
         denoise_fn=model,
         save_interm=save_interm,
         results_folder=results_folder, # for debug
-        recon_images=recon_images,
         n_scales=n_scales,
-        scale_step=scale_step,
+        scale_factor=scale_factor,
         image_sizes=sizes,
         scale_mul=scale_mul,
         channels=3,
@@ -116,7 +110,7 @@ def main():
             ms_diffusion,
             folder=args.dataset_folder,
             n_scales=n_scales,
-            scale_step=scale_step,
+            scale_factor=scale_factor,
             image_sizes=sizes,
             train_batch_size=args.train_batch_size,
             train_lr=args.train_lr,
@@ -235,7 +229,6 @@ def main():
                     "n_aug": 16}
         t2l_clip_extractor = ClipExtractor(clip_cfg)
         strength = 0.1
-        clip_custom_t_list = sample_t_list  # [77,66,52]
         num_clip_iters = 100
         num_denoising_steps = 3
         # select from the finest scale
@@ -246,18 +239,15 @@ def main():
         roi = cv2.selectROI(image_to_select)
         roi_perm = [1, 0, 3, 2]
         roi = [roi[i] for i in roi_perm]
-        full_grad = False  # feed the whole image into clip
         ScaleTrainer.ema_model.reblurring = False
         ScaleTrainer.clip_roi_sampling(clip_model=t2l_clip_extractor,
                                        text_input=text_input,
                                        strength=strength,
                                        sample_batch_size=args.sample_batch_size,
-                                       custom_t_list=clip_custom_t_list,
                                        num_clip_iters=num_clip_iters,
                                        num_denoising_steps=num_denoising_steps,
                                        clip_roi_bb=roi, #[90,75,50,50],
                                        save_unbatched=True,
-                                       full_grad=full_grad,
                                        )
 
     elif args.mode == 'roi':
@@ -300,9 +290,6 @@ def main():
     elif args.mode == 'style_transfer' or args.mode == 'harmonization':
 
         i2i_folder = os.path.join(args.dataset_folder, 'i2i')
-        i2i_file = args.input_image
-        mask = args.harm_mask  # 'seascape_mask_dragon.png'
-
         if args.mode == 'style_transfer':
             # start diffusion from last scale
             start_s = n_scales - 1
@@ -319,11 +306,11 @@ def main():
         for i in range(n_scales-1):
             custom_t.append(0)
         custom_t.append(start_t)
-        # use histogram of original image for histogram matching
+        # use the histogram of the original image for histogram matching
         hist_ref_path = f'{args.dataset_folder}scale_{start_s}/'
 
         ScaleTrainer.ema_model.reblurring = True
-        ScaleTrainer.image2image(input_folder=i2i_folder, input_file=i2i_file, mask=mask, hist_ref_path=hist_ref_path,
+        ScaleTrainer.image2image(input_folder=i2i_folder, input_file=args.input_image, mask=args.harm_mask, hist_ref_path=hist_ref_path,
                                  batch_size=args.sample_batch_size,
                                  image_name=args.image_name, start_s=start_s, custom_t=custom_t, scale_mul=(1, 1),
                                  device=device, use_hist=use_hist, save_unbatched=True, auto_scale=50000, mode=args.mode)

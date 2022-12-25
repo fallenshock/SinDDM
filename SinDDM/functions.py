@@ -50,6 +50,10 @@ def extract_patch(image, bb):
 
 # for clip sampling
 def thresholded_grad(grad, quantile=0.8):
+    """
+    Receives the calculated CLIP gradients and outputs the soft-tresholded gradients based on the given quantization.
+    Also outputs the mask that corresponds to remaining gradients positions.
+    """
     grad_energy = torch.norm(grad, dim=1)
     grad_energy_reshape = torch.reshape(grad_energy, (grad_energy.shape[0],-1))
     enery_quant = torch.quantile(grad_energy_reshape, q=quantile, dim=1, interpolation='nearest')[:,None,None] #[batch ,1 ,1]
@@ -123,7 +127,21 @@ def cosine_beta_schedule(timesteps, s=0.008):
     return np.clip(betas, a_min=0, a_max=0.999)
 
 
-def create_img_scales(foldername, filename, n_scales=5, scale_step=1.411, image_size=None, create=False, auto_scale=None, const_rf_ratio='small'):
+def create_img_scales(foldername, filename, scale_factor=1.411, image_size=None, create=False, auto_scale=None):
+    """
+    Receives path to the desired training image and scale_factor that defines the downsampling rate.
+    optional argument image_size can be given to reshape the original training image.
+    optional argument auto_scale - limits the training image to have a given #pixels.
+    The function creates the downsampled and upsampled blurry versions of the training image.
+    Calculates n_scales such that RF area is ~40% of the smallest scale area with the given scale_factor.
+    Also calculates the MSE loss between upsampled/downsampled images for starting T calculation (see paper).
+
+
+    returns:
+            sizes: list of image sizes for each scale
+            rescale_losses: list of MSE losses between US/DS images for each scale
+            scale_factor: modified scale_factor to allow 40% area ratio
+    """
     orig_image = Image.open(foldername + filename)
     # convert to PNG extension for lossless conversion
     filename = filename.rsplit( ".", 1 )[ 0 ] + '.png'
@@ -139,25 +157,21 @@ def create_img_scales(foldername, filename, n_scales=5, scale_step=1.411, image_
     rescale_losses = []
 
     # auto resize
-    rf_net = np.asarray(35) # denoiser net RF
-    area_rf = rf_net ** 2
-    area_scale_0 = 3110  # defined such that area_rf/area_scale0 ~= 40%
-    # area_ratio = area_rf/area_scale_0
+    # rf_net = 35
+    area_scale_0 = 3110  # defined such that rf_net^2/area_scale0 ~= 40%
     s_dim = min(image_size[0], image_size[1])
     l_dim = max(image_size[0], image_size[1])
     scale_0_dim = int(round(np.sqrt(area_scale_0*s_dim/l_dim)))
     # clamp between 42 and 55
     scale_0_dim = 42 if scale_0_dim < 42 else (55 if scale_0_dim > 55 else scale_0_dim )
-
-    if const_rf_ratio == 'small':
-        small_val = scale_0_dim
-        min_val_image = min(image_size[0], image_size[1])
-        n_scales = int(round( (np.log(min_val_image/small_val)) / (np.log(scale_step)) ) + 1)
-        scale_step = np.exp((np.log(min_val_image / small_val)) / (n_scales - 1))
+    small_val = scale_0_dim
+    min_val_image = min(image_size[0], image_size[1])
+    n_scales = int(round( (np.log(min_val_image/small_val)) / (np.log(scale_factor)) ) + 1)
+    scale_factor = np.exp((np.log(min_val_image / small_val)) / (n_scales - 1))
 
     for i in range(n_scales):
-        cur_size = (int(round(image_size[0] / np.power(scale_step, n_scales - i - 1))),
-                    int(round(image_size[1] / np.power(scale_step, n_scales - i - 1))))
+        cur_size = (int(round(image_size[0] / np.power(scale_factor, n_scales - i - 1))),
+                    int(round(image_size[1] / np.power(scale_factor, n_scales - i - 1))))
         cur_img = orig_image.resize(cur_size, Image.LANCZOS)
         path_to_save = foldername + 'scale_' + str(i) + '/'
         if create:
@@ -175,5 +189,5 @@ def create_img_scales(foldername, filename, n_scales=5, scale_step=1.411, image_
             Path(path_to_save).mkdir(parents=True, exist_ok=True)
             recon_image.save(path_to_save + filename)
 
-    return sizes, rescale_losses, recon_images, scale_step, n_scales
+    return sizes, rescale_losses, scale_factor, n_scales
 

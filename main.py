@@ -21,8 +21,8 @@ def main():
     # relevant if mode==clip_{content/style_gen/style_trans/roi}
     parser.add_argument("--clip_text", help='enter CLIP text.', default='Fire in the Forest')
     # # relevant if mode==clip_content
-    parser.add_argument("--fill_factor", help='Dictates relative amount of pixels to be changed.', type=float)
-    parser.add_argument("--strength", help='Dictates the relative strength of CLIPs gradients.',  type=float)
+    parser.add_argument("--fill_factor", help='Dictates relative amount of pixels to be changed. Should be between 0 and 1.', type=float)
+    parser.add_argument("--strength", help='Dictates the relative strength of CLIPs gradients. Should be between 0 and 1.',  type=float)
     parser.add_argument("--roi_n_tar", help='Defines the number of target ROIs in the new image.', default=1, type=int)
     # Dataset
     parser.add_argument("--dataset_folder", help='choose dataset folder.', default='./datasets/forest/')
@@ -168,7 +168,10 @@ def main():
         for i in range(n_scales-1):
             guidance_sub_iters.append(1)
         strength = args.strength
-        quantile = 1-args.fill_factor
+        quantile = 1. - args.fill_factor
+        assert 0 <= strength <= 1, "Strength value should be between 0 & 1 "
+        assert 0 <= quantile <= 1, "fill_factor value should be between 0 & 1 "
+
         llambda = 0.2
         stop_guidance = 3 # at the last scale, disable the guidance in the last x steps in order to avoid artifacts from CLIP
         ScaleTrainer.ema_model.reblurring = False
@@ -200,9 +203,9 @@ def main():
         guidance_sub_iters.append(1)
 
         strength = 0.3
-        quantile = 0.0 # change the whole image
+        quantile = 0.0 # allow to change the whole image
         llambda = 0.05
-        stop_guidance = 4  # in the last scale, stop the guidance in the last steps in order to avoid artifacts of the clip's gradients
+        stop_guidance = 4  # at the last scale, disable the guidance in the last x steps in order to avoid artifacts from CLIP
         if args.mode == 'clip_style_gen':
             start_noise = True
         else:  # mode == 'clip_style_trans':
@@ -272,7 +275,6 @@ def main():
         target_h = int(image_to_select.shape[0] * scale_mul[0])
         target_w = int(image_to_select.shape[1] * scale_mul[1])
         empty_image = np.ones((target_h, target_w, 3))
-        # black_image = np.zeros((target_h, target_w, 3))
         target_patch_tensor = torchvision.transforms.ToTensor()(
             image_to_select[tar_y:tar_y + tar_h, tar_x:tar_x + tar_w, :])
 
@@ -304,18 +306,16 @@ def main():
         if args.mode == 'style_transfer':
             # start diffusion from last scale
             start_s = n_scales - 1
-            # start diffusion from t=5 - increase for stronger prior on the original image
-            start_t = 5
-            custom_t = []
+            # start diffusion from t=10 - increase for stronger prior on the original image
+            start_t = 10
             use_hist = True
         else:
             # start diffusion from last scale
             start_s = n_scales - 1
-            # start diffusion from t=10 - increase for stronger prior on the original image
+            # start diffusion from t=5 - increase for stronger prior on the original image
             start_t = 5
-            custom_t = []
             use_hist = False
-
+        custom_t = []
         for i in range(n_scales-1):
             custom_t.append(0)
         custom_t.append(start_t)

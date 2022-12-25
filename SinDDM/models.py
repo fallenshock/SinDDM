@@ -413,8 +413,8 @@ class MultiScaleGaussianDiffusion(nn.Module):
 
                 # update clean image
                 x_recon += self.clip_strength * division_norm * clip_grad * self.clip_mask
-
                 x_recon.clamp_(-1., 1.)
+
                 # prepare for next sub-iteration
                 x_recon_renorm = (x_recon + 1) * 0.5
                 # plot score

@@ -299,7 +299,6 @@ class MultiscaleTrainer(object):
     def image2image(self, input_folder='', input_file='', mask='', hist_ref_path='', image_name='', start_s=1, custom_t=None, batch_size=16, scale_mul=(1, 1), device=None, use_hist=False, save_unbatched=True, auto_scale=None, mode=None):
         if custom_t is None:
             custom_t = [0, 0, 0, 0, 0, 0, 0] # 0 - use default sampling t
-        orig_image = self.data_list[self.n_scales-1][0][0][None,:,:,:]
         input_path = os.path.join(input_folder, input_file)
         input_img = Image.open(input_path).convert("RGB")
 
@@ -333,7 +332,7 @@ class MultiscaleTrainer(object):
 
         final_results_folder = Path(str(self.results_folders[0] / 'i2i_final_samples'))
         final_results_folder.mkdir(parents=True, exist_ok=True)
-        final_img   =   None
+        final_img = None
         t_string = '_'.join(str(e) for e in custom_t)
         time = str(datetime.datetime.now()).replace(":", "_")
         for i in range(self.n_scales-start_s):

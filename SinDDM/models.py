@@ -318,7 +318,7 @@ class MultiScaleGaussianDiffusion(nn.Module):
             return x_tm1_mix, x_t_mix
 
 
-    def q_posterior(self, x_start, x_t_mix, x_t, t, s, pred_noise):  # x_start is x_tm1_mix
+    def q_posterior(self, x_start, x_t_mix, x_t, t, s):
         if not self.reblurring or s == 0:
             # regular DDPM
             posterior_mean = (
@@ -328,11 +328,10 @@ class MultiScaleGaussianDiffusion(nn.Module):
             )
             posterior_variance = extract(self.posterior_variance, t, x_t.shape)
             posterior_log_variance_clipped = extract(self.posterior_log_variance_clipped, t, x_t.shape)
-        elif t[0]>0:
+        elif t[0] > 0:
             x_tm1_mix = x_start
-
             posterior_variance_low = torch.zeros(x_t.shape,
-                                                 device=self.device)  # extract(self.posterior_variance, t, x_t.shape)
+                                                 device=self.device)
             posterior_variance_high = 1 - extract(self.alphas_cumprod, t - 1, x_t.shape)
             omega = self.omega
             posterior_variance = (1-omega) * posterior_variance_low + omega * posterior_variance_high
@@ -341,9 +340,9 @@ class MultiScaleGaussianDiffusion(nn.Module):
             var_t = posterior_variance
 
             posterior_mean = extract(self.sqrt_alphas_cumprod, t-1, x_t.shape) * x_tm1_mix + \
-                             torch.sqrt(1-extract(self.alphas_cumprod, t-1, x_t.shape) - var_t) * \
-                             (x_t - extract(self.sqrt_alphas_cumprod, t, x_t.shape) * x_t_mix) / \
-                             extract(self.sqrt_one_minus_alphas_cumprod, t, x_t.shape)
+                                    torch.sqrt(1-extract(self.alphas_cumprod, t-1, x_t.shape) - var_t) * \
+                                    (x_t - extract(self.sqrt_alphas_cumprod, t, x_t.shape) * x_t_mix) / \
+                                    extract(self.sqrt_one_minus_alphas_cumprod, t, x_t.shape)
 
         else:
             posterior_mean = x_start  # for t==0 no noise added
@@ -356,7 +355,6 @@ class MultiScaleGaussianDiffusion(nn.Module):
     def p_mean_variance(self, x, t, s, clip_denoised: bool):
         pred_noise = self.denoise_fn(x, t, scale=s)
         x_recon, x_t_mix = self.predict_start_from_noise(x, t=t, s=s, noise=pred_noise)
-        pred_noise.clamp_(-1.,1.)
         cur_gammas = self.gammas[s - 1].reshape(-1).clamp(0, 0.55)
 
         if self.save_interm:
@@ -445,7 +443,7 @@ class MultiScaleGaussianDiffusion(nn.Module):
 
         model_mean, posterior_variance, posterior_log_variance = self.q_posterior(x_start=x_tm1_mix, x_t_mix=x_t_mix,
                                                                                   x_t=x, t=t, s=s,
-                                                                                  pred_noise=pred_noise)
+                                                                                  )
         return model_mean, posterior_variance, posterior_log_variance
 
     @torch.no_grad()
@@ -490,6 +488,9 @@ class MultiScaleGaussianDiffusion(nn.Module):
 
     @torch.no_grad()
     def sample(self, batch_size=16, scale_0_size=None, s=0):
+        """
+        Sample from the first scale (without conditioning on a previous scale's output).
+        """
         if scale_0_size is not None:
             image_size = scale_0_size
         else:
@@ -498,9 +499,9 @@ class MultiScaleGaussianDiffusion(nn.Module):
         return self.p_sample_loop((batch_size, channels, image_size[0], image_size[1]), s=s)
 
     @torch.no_grad()
-    def p_sample_via_scale_loop(self, batch_size, img, s, custom_t=0):
+    def p_sample_via_scale_loop(self, batch_size, img, s, custom_t=None):
         device = self.betas.device
-        if custom_t == 0:
+        if custom_t is None:
             total_t = self.num_timesteps_ideal[min(s, self.n_scales-1)]-1
         else:
             total_t = custom_t
@@ -536,9 +537,7 @@ class MultiScaleGaussianDiffusion(nn.Module):
             t_min = self.num_timesteps_ideal[s + 1]
         else:
             t_min = 0
-        for i in tqdm(reversed(range(t_min, total_t)), desc='sampling loop time step',
-                      total=total_t):
-
+        for i in tqdm(reversed(range(t_min, total_t)), desc='sampling loop time step', total=total_t):
             img = self.p_sample(img, torch.full((b,), i, device=device, dtype=torch.long), s)
             if self.save_interm:
                 final_img = (img + 1) * 0.5
@@ -548,10 +547,13 @@ class MultiScaleGaussianDiffusion(nn.Module):
         return img
 
     @torch.no_grad()
-    def sample_via_scale(self, batch_size, img, s, scale_mul=(1, 1), custom_sample=False, custom_img_size_idx=0, custom_t=0, custom_image_size=None):
+    def sample_via_scale(self, batch_size, img, s, scale_mul=(1, 1), custom_sample=False, custom_img_size_idx=0, custom_t=None, custom_image_size=None):
+        """
+        Sampling at a given scale s conditioned on the output of a previous scale.
+        """
         if custom_sample:
-            if custom_img_size_idx >= self.n_scales:
-                size = self.image_sizes[self.n_scales-1] # extrapolate size
+            if custom_img_size_idx >= self.n_scales:  # extrapolate size
+                size = self.image_sizes[self.n_scales-1]
                 factor = self.scale_factor ** (custom_img_size_idx + 1 - self.n_scales)
                 size = (int(size[0] * factor), int(size[1] * factor))
             else:

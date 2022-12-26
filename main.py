@@ -12,10 +12,12 @@ def main():
 
     parser = argparse.ArgumentParser()
 
-    parser.add_argument("--scope", help='choose training scope.', default='forest_0026')
+    parser.add_argument("--scope", help='choose training scope.', default='forest')
     parser.add_argument("--mode", help='choose mode: train, sample, clip_content, clip_style_gen, clip_style_trans, clip_roi, harmonization, style_transfer, roi')
     # relevant if mode==hamonization/style_transfer
-    parser.add_argument("--input_image", help='content image.', default='seascape_composite_dragon.png')
+    parser.add_argument("--input_image", help='content image for style transfer or harmonization.', default='seascape_composite_dragon.png')
+    parser.add_argument("--start_t_harm", help='starting T at last scale for harmonization', default=5, type=int)
+    parser.add_argument("--start_t_style", help='starting T at last scale for style transfer', default=15, type=int)
     # relevant if mode==harmonization
     parser.add_argument("--harm_mask", help='harmonization mask.', default='seascape_mask_dragon.png')
     # relevant if mode==clip_{content/style_gen/style_trans/roi}
@@ -167,7 +169,7 @@ def main():
         assert 0 <= quantile <= 1, "fill_factor value should be between 0 & 1 "
 
         llambda = 0.2
-        stop_guidance = 3 # at the last scale, disable the guidance in the last x steps in order to avoid artifacts from CLIP
+        stop_guidance = 3  # at the last scale, disable the guidance in the last x steps in order to avoid artifacts from CLIP
         ScaleTrainer.ema_model.reblurring = False
         ScaleTrainer.clip_sampling(clip_model=t2l_clip_extractor,
                                    text_input=text_input,
@@ -293,14 +295,14 @@ def main():
         if args.mode == 'style_transfer':
             # start diffusion from last scale
             start_s = n_scales - 1
-            # start diffusion from t=10 - increase for stronger prior on the original image
-            start_t = 10
+            # start diffusion from t - increase for stronger prior on the original image
+            start_t = args.start_t_style
             use_hist = True
         else:
             # start diffusion from last scale
             start_s = n_scales - 1
-            # start diffusion from t=5 - increase for stronger prior on the original image
-            start_t = 5
+            # start diffusion from t - increase for stronger prior on the original image
+            start_t = args.start_t_harm
             use_hist = False
         custom_t = []
         for i in range(n_scales-1):

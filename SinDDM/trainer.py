@@ -286,7 +286,7 @@ class MultiscaleTrainer(object):
 
     def image2image(self, input_folder='', input_file='', mask='', hist_ref_path='', image_name='', start_s=1, custom_t=None, batch_size=16, scale_mul=(1, 1), device=None, use_hist=False, save_unbatched=True, auto_scale=None, mode=None):
         if custom_t is None:
-            custom_t = [0, 0, 0, 0, 0, 0, 0] # 0 - use default sampling t
+            custom_t = self.ema_model.num_timesteps_ideal # 0 - use default sampling t
         input_path = os.path.join(input_folder, input_file)
         input_img = Image.open(input_path).convert("RGB")
 
@@ -312,10 +312,10 @@ class MultiscaleTrainer(object):
             orig_sample_0 = Image.open((hist_ref_path + image_name)).convert("RGB")  # next(self.dl_list[0])
             input_img_ds_matched_arr = match_histograms(image=np.array(input_img), reference=np.array(orig_sample_0), channel_axis=2)
             input_img = Image.fromarray(input_img_ds_matched_arr)
+
         input_img_tensor = (transforms.ToTensor()(input_img) * 2 - 1)  # normalize
         input_size = torch.tensor(input_img_tensor.shape[1:])
         input_img_batch = input_img_tensor.repeat(batch_size, 1, 1, 1).to(device)  # batchify and send to GPU
-
 
         final_results_folder = Path(str(self.results_folder / 'i2i_final_samples'))
         final_results_folder.mkdir(parents=True, exist_ok=True)
@@ -323,6 +323,8 @@ class MultiscaleTrainer(object):
         t_string = '_'.join(str(e) for e in custom_t)
         time = str(datetime.datetime.now()).replace(":", "_")
 
+        if start_s > 0:  # starting scale has no mixing between blurry and clean images
+            self.ema_model.gammas[start_s-1].clamp_(0, 0)
         samples_from_scales = []
         for i in range(self.n_scales-start_s):
             s = i + start_s
@@ -447,9 +449,8 @@ class MultiscaleTrainer(object):
             image_roi_renorm = (image_roi + 1) * 0.5
 
         # insert patch into original image
-
         image[:, :, clip_roi_bb[0]:clip_roi_bb[0] + clip_roi_bb[2],clip_roi_bb[1]:clip_roi_bb[1] + clip_roi_bb[3]] = image_roi
-
+        #
         final_image = self.ema_model.sample_via_scale(sample_batch_size,
                                                       image,
                                                       s=self.n_scales-1,

@@ -163,10 +163,12 @@ def main():
         guidance_sub_iters = [0]
         for i in range(n_scales-1):
             guidance_sub_iters.append(1)
+
+        assert args.strength is not None and 0 <= args.strength <= 1, f"Strength value should be between 0 & 1. Got: {args.strength} "
+        assert args.fill_factor is not None and 0 <= args.fill_factor <= 1, f"fill_factor value should be between 0 & 1. Got: {args.fill_factor} "
         strength = args.strength
         quantile = 1. - args.fill_factor
-        assert 0 <= strength <= 1, "Strength value should be between 0 & 1 "
-        assert 0 <= quantile <= 1, "fill_factor value should be between 0 & 1 "
+
 
         llambda = 0.2
         stop_guidance = 3  # at the last scale, disable the guidance in the last x steps in order to avoid artifacts from CLIP

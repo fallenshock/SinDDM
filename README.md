@@ -48,8 +48,6 @@ If you use this code for your research, please cite our paper:
 
 ## Requirements 
 
-*coming soon*
-
 ```
 python -m pip install -r requirements.txt
 ```

@@ -203,7 +203,7 @@ def main():
         strength = 0.3
         quantile = 0.0 # allow to change the whole image
         llambda = 0.05
-        stop_guidance = 4  # at the last scale, disable the guidance in the last x steps in order to avoid artifacts from CLIP
+        stop_guidance = 3  # at the last scale, disable the guidance in the last x steps in order to avoid artifacts from CLIP
         if args.mode == 'clip_style_gen':
             start_noise = True
         else:  # mode == 'clip_style_trans':

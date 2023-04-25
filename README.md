@@ -6,7 +6,7 @@
 # SinDDM
 
 [Project](https://matankleiner.github.io/sinddm/) | [Arxiv](https://arxiv.org/pdf/2211.16582.pdf) | [Supplementary materials](https://matankleiner.github.io/sinddm/resources/sinddm_supp.pdf)
-### Official pytorch implementation of the paper: "SinDDM: A Single Image Denoising Diffusion Model"
+### [ICML 2023] Official pytorch implementation of the paper: "SinDDM: A Single Image Denoising Diffusion Model"
 
 
 ## Random Samples from a Single Example

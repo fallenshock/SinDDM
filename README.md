@@ -27,12 +27,14 @@ See section 4 in our [paper](https://arxiv.org/pdf/2211.16582.pdf) for more deta
 If you use this code for your research, please cite our paper:
 
 ```
-@article{kulikov2022sinddm,
-  title      = {SinDDM: A Single Image Denoising Diffusion Model},
-  author     = {Kulikov, Vladimir and Yadin, Shahar and Kleiner, Matan and Michaeli, Tomer},
-  journal    = {arXiv preprint arXiv:2211.16582},
-  year       = {2022}
-}
+					@inproceedings{kulikov2023sinddm,
+					  title={Sinddm: A single image denoising diffusion model},
+					  author={Kulikov, Vladimir and Yadin, Shahar and Kleiner, Matan and Michaeli, Tomer},
+					  booktitle={International Conference on Machine Learning},
+					  pages={17920--17930},
+					  year={2023},
+					  organization={PMLR}
+					}
 ```
 
 ## Table of Contents
@@ -65,7 +67,6 @@ This code was tested with python 3.8 and torch 1.13.
 ```
 
 ## Usage Examples 
-**Note: This is an early code release which provides full functionality, but is not yet fully organized or optimized. We will be extensively updating this repository in the coming weeks.** 
 
 ###  Train
 To train a SinDDM model on your own image e.g. `<training_image.png>`, put the desired training image under `./datasets/<training_image>/`, and run

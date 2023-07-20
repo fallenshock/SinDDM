@@ -27,14 +27,14 @@ See section 4 in our [paper](https://arxiv.org/pdf/2211.16582.pdf) for more deta
 If you use this code for your research, please cite our paper:
 
 ```
-					@inproceedings{kulikov2023sinddm,
-					  title={Sinddm: A single image denoising diffusion model},
-					  author={Kulikov, Vladimir and Yadin, Shahar and Kleiner, Matan and Michaeli, Tomer},
-					  booktitle={International Conference on Machine Learning},
-					  pages={17920--17930},
-					  year={2023},
-					  organization={PMLR}
-					}
+@inproceedings{kulikov2023sinddm,
+  title={Sinddm: A single image denoising diffusion model},
+  author={Kulikov, Vladimir and Yadin, Shahar and Kleiner, Matan and Michaeli, Tomer},
+  booktitle={International Conference on Machine Learning},
+  pages={17920--17930},
+  year={2023},
+  organization={PMLR}
+}
 ```
 
 ## Table of Contents

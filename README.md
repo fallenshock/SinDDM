@@ -1,7 +1,6 @@
-[![Single_Image_Generative_Model](https://img.shields.io/badge/single%20image-generative%20model-yellow)](https://github.com/topics/single-image-generation)
-[![Python 3.8](https://img.shields.io/badge/python-3.812+-blue)](https://www.python.org/downloads/release/python-38/)
-[![torch](https://img.shields.io/badge/torch-1.13.0+-green)](https://pytorch.org/)
-
+[![Single_Image_Generative_Model](https://img.shields.io/badge/single%20image-generative%20model-green)](https://github.com/topics/single-image-generation)
+[![Python](https://img.shields.io/badge/python-3.8-blue?python-3670A0?style=for-the-badge&logo=python&logoColor=ffdd54)](https://www.python.org/downloads/release/python-38/)
+![PyTorch](https://img.shields.io/badge/torch-1.13-red?PyTorch-%23EE4C2C.svg?style=for-the-badge&logo=PyTorch&logoColor=white)
 
 # SinDDM
 
